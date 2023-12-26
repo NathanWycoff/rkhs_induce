@@ -23,16 +23,22 @@ exec(open("python/jax_vigp_class.py").read())
 N = 2000
 NN = 500
 M = 10
-P = 2
+P = 1
 
 g_nug = 1e-6
 
-iters = 1000
+reps = 10
 
-mse = np.zeros(iters)
-mseme = np.zeros(iters)
+do1 = False
 
-for it in tqdm(range(iters)):
+mse = np.zeros(reps)
+if do1:
+    msem1 = np.zeros(reps)
+msem2 = np.zeros(reps)
+
+verbose = True
+
+for it in tqdm(range(reps)):
     X = np.random.uniform(size=[N,P])
     XX = np.random.uniform(size=[NN,P])
     y = np.cos(4*np.pi*np.sum(X, axis = 1))
@@ -43,32 +49,30 @@ for it in tqdm(range(iters)):
     y = (y-mu_y) / sig_y
     yy = (yy-mu_y) / sig_y
 
-    mod = vargp(X, y, M)
-    modme = vargp_rkhs(X, y, M)
-
-    mod.fit(verbose=False)
-    modme.fit(verbose=False)
-
-    mod.params['Z']
-
+    mod = SGGP(X, y, M)
+    mod.fit(verbose=verbose)
     yy_hat = mod.pred(XX)
-    yy_hat_me = modme.pred(XX)
-
-    #fig = plt.figure()
-    #plt.scatter(X[:,0], y)
-    #plt.scatter(XX[:,0], yy, label = 'test')
-    #plt.scatter(XX[:,0], yy_hat, label = 'std')
-    #plt.scatter(XX[:,0], yy_hat_me, label = 'rkhs')
-    #plt.legend()
-    #plt.savefig("pred.pdf")
-    #plt.close()
-
     mse[it] = jnp.mean(jnp.square(yy_hat-yy))
-    mseme[it] = jnp.mean(jnp.square(yy_hat_me-yy))
+
+    if do1:
+        mod1 = M1GP(X, y, M)
+        mod1.fit(verbose=verbose)
+        yy_hat_1 = mod1.pred(XX)
+        msem1[it] = jnp.mean(jnp.square(yy_hat_1-yy))
+
+    mod2 = M2GP(X, y, M,D=5)
+    mod2.fit(verbose=verbose)
+    yy_hat_2 = mod2.pred(XX)
+    msem2[it] = jnp.mean(jnp.square(yy_hat_2-yy))
+
 
 fig = plt.figure()
 trans = np.log10
 plt.title("P=%d"%P)
-plt.boxplot([trans(mse),trans(mseme)])
+if do1:
+    meths = [trans(mse),trans(msem1),trans(msem2)]
+else:
+    meths = [trans(mse),trans(msem2)]
+plt.boxplot(meths)
 plt.savefig("bakeoff.pdf")
 plt.close()

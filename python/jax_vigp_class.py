@@ -42,7 +42,7 @@ class VIGP(object):
 
         Knm = self.get_Knm(params)
         Kmm = self.get_Kmm(params)
-        Knn = self.get_K(self.X, self.X, ell)
+        #Knn = self.get_K(self.X, self.X, ell)
 
         # Compute diag of Ktilde directly.
         Kmmi = jnp.linalg.inv(Kmm+g_nug*jnp.eye(self.M)) #Even faster with chol
@@ -50,11 +50,13 @@ class VIGP(object):
         # Warning: assumes that correlation matrix diagonal is 1.
         ktilde = jnp.ones(self.N) - q_diag
 
+        ## CODE BLOCK A
         ## Using TFP diag + LR
         ed = jnp.linalg.eigh(Kmm+g_nug*jnp.eye(self.M))
         U = Knm @ ed[1] @ jnp.diag(jnp.sqrt(1/ed[0]))
         #U @ U.T - Qnn = 0.
         dist = tfp.distributions.MultivariateNormalDiagPlusLowRankCovariance(cov_diag_factor = sigma2*jnp.ones(self.N), cov_perturb_factor = U)
+        ## CODE BLOCK A
         ll = dist.log_prob(y)
 
         reg = 1./(2.*sigma2)*jnp.sum(ktilde)
@@ -67,13 +69,24 @@ class VIGP(object):
 
         Knm = self.get_Knm(self.params)
         Kmm = self.get_Kmm(self.params)
-        Knn = self.get_K(self.X, self.X, ell)
-
-        Qnn = Knm @ jnp.linalg.solve(Kmm + g_nug*jnp.eye(self.M), Knm.T)
+        #Knn = self.get_K(self.X, self.X, ell)
 
         kstar = self.get_K(XX, self.X, ell)
-        QI = Qnn+sigma2*jnp.eye(self.N)
-        ret = kstar @ np.linalg.solve(QI, self.y)
+
+        # Naive inversion
+        #Qnn = Knm @ jnp.linalg.solve(Kmm + g_nug*jnp.eye(self.M), Knm.T)
+        #QI = Qnn+sigma2*jnp.eye(self.N)
+        #ret = kstar @ np.linalg.solve(QI, self.y)
+
+        ## CODE BLOCK A
+        ## Using TFP diag + LR
+        ed = jnp.linalg.eigh(Kmm+g_nug*jnp.eye(self.M))
+        U = Knm @ ed[1] @ jnp.diag(jnp.sqrt(1/ed[0]))
+        #U @ U.T - Qnn = 0.
+        dist = tfp.distributions.MultivariateNormalDiagPlusLowRankCovariance(cov_diag_factor = sigma2*jnp.ones(self.N), cov_perturb_factor = U)
+        ## CODE BLOCK A
+        ret = kstar @ dist.cov_operator.solve(self.y.reshape((-1,1))).flatten()
+
         return ret
 
     def compile(self):

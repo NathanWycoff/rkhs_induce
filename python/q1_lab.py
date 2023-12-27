@@ -21,7 +21,7 @@ exec(open("python/jax_vigp_class.py").read())
 N = 2000
 NN = 500
 M = 10
-P = 2
+P = 1
 
 X = np.random.uniform(size=[N,P])
 XX = np.random.uniform(size=[NN,P])
@@ -33,5 +33,17 @@ sig_y = np.std(y)
 y = (y-mu_y) / sig_y
 yy = (yy-mu_y) / sig_y
 
+modb = SGGP(X,y)
+mod2 = M2GP(X,y)
 
-mod = 
+modb.fit()
+mod2.fit()
+
+fig = plt.figure()
+plt.scatter(XX[:,0],yy, label = 'True')
+plt.scatter(XX[:,0], modb.pred(XX), label = 'Snelson-Ghahramani')
+plt.scatter(XX[:,0], mod2.pred(XX), label = 'M2')
+plt.legend()
+plt.savefig("temp.pdf")
+plt.close()
+

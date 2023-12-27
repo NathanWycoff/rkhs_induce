@@ -18,14 +18,12 @@ config.update("jax_enable_x64", True)
 
 exec(open("python/jax_vigp_class.py").read())
 
-#np.random.seed(123)
+np.random.seed(123)
 
 N = 2000
 NN = 500
 M = 10
 P = 1
-
-g_nug = 1e-6
 
 reps = 10
 

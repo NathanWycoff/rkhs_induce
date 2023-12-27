@@ -17,6 +17,7 @@ import optax
 
 class VIGP(object):
     def __init__(self, X, y, M = 10):
+        self.meth_name = 'Var Induc GP'
         self.N,self.P = X.shape
         self.M = M
         ell_init = jnp.repeat(jnp.array(np.log(1e-1), dtype = np.float64),P)
@@ -24,6 +25,7 @@ class VIGP(object):
         self.params = {'ell': ell_init, 'sigma2' : sigma2_init}
         self.X = X
         self.y = y
+        self.g_nug = 1e-6
 
         self.kernel = lambda x,y, ell: jnp.exp(-jnp.sum(jnp.square(x-y)/ell))
         self.get_K = lambda X1, X2, ell: jax.vmap(lambda x: jax.vmap(lambda y: self.kernel(x, y, ell))(X2))(X1)
@@ -45,14 +47,14 @@ class VIGP(object):
         #Knn = self.get_K(self.X, self.X, ell)
 
         # Compute diag of Ktilde directly.
-        Kmmi = jnp.linalg.inv(Kmm+g_nug*jnp.eye(self.M)) #Even faster with chol
+        Kmmi = jnp.linalg.inv(Kmm+self.g_nug*jnp.eye(self.M)) #Even faster with chol
         q_diag = jax.vmap(lambda k: k.T @ Kmmi @ k)(Knm)
         # Warning: assumes that correlation matrix diagonal is 1.
         ktilde = jnp.ones(self.N) - q_diag
 
         ## CODE BLOCK A
         ## Using TFP diag + LR
-        ed = jnp.linalg.eigh(Kmm+g_nug*jnp.eye(self.M))
+        ed = jnp.linalg.eigh(Kmm+self.g_nug*jnp.eye(self.M))
         U = Knm @ ed[1] @ jnp.diag(jnp.sqrt(1/ed[0]))
         #U @ U.T - Qnn = 0.
         dist = tfp.distributions.MultivariateNormalDiagPlusLowRankCovariance(cov_diag_factor = sigma2*jnp.ones(self.N), cov_perturb_factor = U)
@@ -74,13 +76,13 @@ class VIGP(object):
         kstar = self.get_K(XX, self.X, ell)
 
         # Naive inversion
-        #Qnn = Knm @ jnp.linalg.solve(Kmm + g_nug*jnp.eye(self.M), Knm.T)
+        #Qnn = Knm @ jnp.linalg.solve(Kmm + self.g_nug*jnp.eye(self.M), Knm.T)
         #QI = Qnn+sigma2*jnp.eye(self.N)
         #ret = kstar @ np.linalg.solve(QI, self.y)
 
         ## CODE BLOCK A
         ## Using TFP diag + LR
-        ed = jnp.linalg.eigh(Kmm+g_nug*jnp.eye(self.M))
+        ed = jnp.linalg.eigh(Kmm+self.g_nug*jnp.eye(self.M))
         U = Knm @ ed[1] @ jnp.diag(jnp.sqrt(1/ed[0]))
         #U @ U.T - Qnn = 0.
         dist = tfp.distributions.MultivariateNormalDiagPlusLowRankCovariance(cov_diag_factor = sigma2*jnp.ones(self.N), cov_perturb_factor = U)
@@ -107,7 +109,7 @@ class VIGP(object):
 
         fig = plt.figure()
         plt.plot(costs)
-        plt.savefig("cost.pdf")
+        plt.savefig(self.meth_name+"_cost.pdf")
         plt.close()
 
 # Snelson and Ghahramani GP
@@ -116,6 +118,7 @@ class SGGP(VIGP):
         VIGP.__init__(self, X, y, M)
         Z_init = jnp.array(np.random.uniform(size=[self.M,self.P]))
         self.params['Z'] = Z_init
+        self.meth_name = 'SGGP'
 
     def get_Knm(self,params):
         ell = jnp.exp(params['ell'])
@@ -136,6 +139,7 @@ class M1GP(VIGP):
         #A_init = jnp.array(np.random.normal(size=[self.M,self.N])) / jnp.sqrt(self.N)
         A_init = jnp.array(np.eye(self.N)[np.random.choice(self.N,self.M,replace=False),:]) 
         self.params['A'] = A_init
+        self.meth_name = 'M1GP'
 
     def get_Knm(self,params):
         ell = jnp.exp(params['ell'])
@@ -161,6 +165,7 @@ class M2GP(VIGP):
         Z_init = jnp.array(np.random.uniform(size=[self.M,self.D,self.P]))
         self.params['A'] = A_init
         self.params['Z'] = Z_init
+        self.meth_name = 'M2GP'
 
     def get_Knm(self,params):
         ell = jnp.exp(params['ell'])

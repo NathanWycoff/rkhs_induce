@@ -109,10 +109,12 @@ class VIGP(object):
 
         fig = plt.figure()
         plt.plot(costs)
+        plt.yscale('log')
         plt.savefig(self.meth_name+"_cost.pdf")
         plt.close()
 
 # Snelson and Ghahramani GP
+# Oh this is actually Titsias'
 class SGGP(VIGP):
     def __init__(self, X, y, M = 10):
         VIGP.__init__(self, X, y, M)

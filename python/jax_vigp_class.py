@@ -13,6 +13,134 @@ import jaxopt
 from jax import config
 from tqdm import tqdm
 import optax
+import warnings
+
+config.update("jax_enable_x64", True)
+
+class YAJO(object):
+    def __init__(self, vng, params, ls = 'backtrack', ls_params = {}, pc = 'id', pc_params = {}):
+        self.vng = vng
+        assert ls in ['fixed_lr','backtracking']
+        self.ls = ls
+        assert pc in ['id','exp_ada']
+        self.pc = pc
+        self.ls_params = ls_params
+        self.pc_params = pc_params
+
+        self.debug = False
+
+        self._init_pc(params)
+        self._init_ls()
+
+
+    def init_state(self):
+        optstate = {'it':0,'done':False,'message':'inprog'}
+        return optstate
+
+    def _init_ls(self):
+        if self.ls=='backtracking':
+            defaults = {
+                    'lr_init' : 1.,
+                    'shrink' : 0.2,
+                    #'grow' : 2,
+                    'max_iter' : 15,
+                    }
+        elif self.ls=='fixed_lr':
+            defaults = {'lr' : 5e-3}
+        else:
+            raise Exception("Unknown ls")
+
+        for s in defaults:
+            if s not in self.ls_params:
+                self.ls_params[s] = defaults[s]
+
+    def _init_pc(self, params):
+        assert type(params)==dict
+        self.pc_vars = {}
+
+        if self.pc=='id':
+            defaults = {}
+        elif self.pc=='exp_ada':
+            self.pc_vars['v_ada'] = {}
+            self.pc_vars['vhat'] = {}
+            for v in params:
+                self.pc_vars['v_ada'][v] = jnp.zeros_like(params[v])
+                self.pc_vars['vhat'][v] = jnp.zeros_like(params[v])
+            defaults = {
+                    'beta2' : 0.999,
+                    'eps' : 1e-8,
+                    }
+        else:
+            raise Exception("Unknown pc")
+
+        for s in defaults:
+            if s not in self.ls_params:
+                self.pc_params[s] = defaults[s]
+
+    def step(self, params, optstate):
+        assert type(params)==dict
+        val, grad = self.vng(params)
+
+        if not np.isfinite(val):
+            print("Nonfinite initial cost.")
+            import IPython; IPython.embed()
+
+        sd = {}
+        if self.pc=='id':
+            for v in grad:
+                sd[v] = -grad[v]
+        elif self.pc=='exp_ada':
+            beta2 = self.pc_params['beta2']
+            vhat = {}
+            for v in params:
+                self.pc_vars['v_ada'][v] = beta2*self.pc_vars['v_ada'][v] + (1-beta2) * jnp.square(grad[v])
+                self.pc_vars['vhat'][v] = jnp.sqrt(self.pc_vars['v_ada'][v] / (1-jnp.power(beta2, optstate['it'])))
+                sd[v] = -grad[v] / (self.pc_vars['vhat'][v] + self.pc_params['eps'])
+        else:
+            raise Exception("Bad pc.")
+
+        if self.ls=='backtracking':
+            lr = self.ls_params['lr_init']
+            candval = np.inf
+            candgrad_finite = False
+            it = 0
+            while ((not candgrad_finite) or (np.isnan(candval)) or candval > val) and it<self.ls_params['max_iter']:
+                it += 1
+                cand_params = {}
+                for v in params:
+                    cand_params[v] = params[v] + lr * sd[v]
+                lr *= self.ls_params['shrink']
+                candval, candgrad = self.vng(cand_params)
+
+                candgrad_finite = True
+                for v in candgrad:
+                    if np.any(~np.isfinite(candgrad[v])):
+                        candgrad_finite = False
+            if self.debug:
+                print("ls took %d iters"%it)
+                print("old cost:%f"%val)
+                print("new cost:%f"%candval)
+            if it==0:
+                import IPython; IPython.embed()
+            ls_failed = candval > val or (not np.isfinite(candval))
+            params = cand_params
+        elif self.ls=='fixed_lr':
+            ls_failed = False
+            for v in params:
+                params[v] += self.ls_params['lr'] * sd[v]
+        else:
+            raise Exception("Bad ls.")
+
+        if ls_failed:
+            print("Line search failed!")
+            optstate['done'] = True
+            optstate['message'] = 'ls_failure'
+
+        optstate['it'] += 1
+
+        return params, optstate, val, grad
+
+
 
 
 class VIGP(object):
@@ -96,26 +224,28 @@ class VIGP(object):
         self.grad_elbo = jax.jit(jax.grad(self.elbo_pre))
         self.vng_elbo = jax.jit(jax.value_and_grad(self.elbo_pre))
 
-    def fit(self, iters = 100, learning_rate = 1e-1, verbose = True):
-        optimizer = optax.adam(learning_rate)
-        opt_state = optimizer.init(self.params)
+    def fit(self, iters = 100, ls = 'fixed_lr', ls_params = {}, verbose = True, pc = 'id'):
+        self.opt = YAJO(self.vng_elbo, self.params, ls=ls, ls_params=ls_params, pc = pc)
+        optstate = self.opt.init_state()
 
-        costs = np.zeros(iters)
+        self.costs = np.nan*np.zeros(iters)
         for i in tqdm(range(iters), disable = not verbose):
-            cost, grad = self.vng_elbo(self.params)
-            updates, opt_state = optimizer.update(grad, opt_state)
-            self.params = optax.apply_updates(self.params, updates)
-            costs[i] = cost
+            #cost, grad = self.vng_elbo(self.params)
+            self.params, optstate, cost, grad = self.opt.step(self.params, optstate)
+            self.costs[i] = cost
+            if optstate['done']:
+                print("Optim exit with message "+optstate['message'])
+                break
 
         fig = plt.figure()
-        plt.plot(costs)
-        plt.yscale('log')
+        plt.plot(self.costs)
+        #plt.yscale('log')
         plt.savefig(self.meth_name+"_cost.pdf")
         plt.close()
 
-# Snelson and Ghahramani GP
+
 # Oh this is actually Titsias'
-class SGGP(VIGP):
+class TGP(VIGP):
     def __init__(self, X, y, M = 10):
         VIGP.__init__(self, X, y, M)
         Z_init = jnp.array(np.random.uniform(size=[self.M,self.P]))

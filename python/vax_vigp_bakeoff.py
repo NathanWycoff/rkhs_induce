@@ -13,6 +13,7 @@ import jaxopt
 from jax import config
 from tqdm import tqdm
 import optax
+from time import time
 
 config.update("jax_enable_x64", True)
 
@@ -22,11 +23,14 @@ np.random.seed(123)
 
 N = 2000
 NN = 500
-M = 50
+#M = 5
+M = 25
 #P = 1
 P = 2
 
-reps = 2
+#reps = 30
+reps = 10
+#reps = 2
 
 do1 = False
 
@@ -36,10 +40,14 @@ ls = 'backtracking'
 pc = 'exp_ada'
 max_iters = 250
 
+##  What should D be set to?
+#D = 5
+D = int(np.ceil(np.sqrt(M)))
+
 mse = np.zeros(reps)
-if do1:
-    msem1 = np.zeros(reps)
+times = np.zeros(reps)
 msem2 = np.zeros(reps)
+timesm2 = np.zeros(reps)
 
 verbose = False
 
@@ -57,24 +65,26 @@ for it in tqdm(range(reps)):
     yy = (yy-mu_y) / sig_y
 
     np.random.seed(it+reps)
+    tt = time()
     mod = TGP(X, y, M)
     #mod.fit(verbose=verbose)
     mod.fit(verbose=verbose, ls=ls, pc=pc, iters=max_iters)
     yy_hat = mod.pred(XX)
-    mse[it] = jnp.mean(jnp.square(yy_hat-yy))
+    td = time()-tt
 
-    #if do1:
-    #    mod1 = M1GP(X, y, M)
-    #    mod1.fit(verbose=verbose)
-    #    yy_hat_1 = mod1.pred(XX)
-    #    msem1[it] = jnp.mean(jnp.square(yy_hat_1-yy))
+    mse[it] = jnp.mean(jnp.square(yy_hat-yy))
+    times[it] = td
 
     np.random.seed(it+2*reps)
-    mod2 = M2GP(X, y, M,D=5)
+    tt = time()
+    mod2 = M2GP(X, y, M,D=D)
     #mod2.fit(verbose=verbose)
     mod2.fit(verbose=verbose, ls=ls, pc=pc, iters=max_iters)
     yy_hat_2 = mod2.pred(XX)
+    td = time()-tt
+
     msem2[it] = jnp.mean(jnp.square(yy_hat_2-yy))
+    timesm2[it] = td
 
     plt.subplot(reps,2,2*it+1)
     plt.plot(mod.costs)

@@ -163,7 +163,8 @@ class VIGP(object):
         self.N,self.P = X.shape
         self.M = M
         ell_init = jnp.repeat(jnp.array(np.log(1e-1), dtype = np.float64),P)
-        sigma2_init = jnp.array(np.log(1e-5), dtype = np.float64)
+        #sigma2_init = jnp.array(np.log(1e-5), dtype = np.float64)
+        sigma2_init = jnp.array(np.log(1e-8), dtype = np.float64)
         self.params = {'ell': ell_init, 'sigma2' : sigma2_init}
         self.X = X
         self.y = y
@@ -184,7 +185,7 @@ class VIGP(object):
         ell = jnp.exp(params['ell'])
         sigma2 = jnp.exp(params['sigma2'])
 
-        Knm = self.get_Knm(params)
+        Knm = self.get_Knm(self.X, params)
         Kmm = self.get_Kmm(params)
         #Knn = self.get_K(self.X, self.X, ell)
 
@@ -207,31 +208,46 @@ class VIGP(object):
 
         return -ll + reg
 
+    #def pred(self, XX):
+    #    ell = jnp.exp(self.params['ell'])
+    #    sigma2 = jnp.exp(self.params['sigma2'])
+
+    #    Knm = self.get_Knm(self.params)
+    #    Kmm = self.get_Kmm(self.params)
+    #    #Knn = self.get_K(self.X, self.X, ell)
+
+    #    kstar = self.get_K(XX, self.X, ell)
+
+    #    # Naive inversion
+    #    #Qnn = Knm @ jnp.linalg.solve(Kmm + self.g_nug*jnp.eye(self.M), Knm.T)
+    #    #QI = Qnn+sigma2*jnp.eye(self.N)
+    #    #ret = kstar @ np.linalg.solve(QI, self.y)
+
+    #    ## CODE BLOCK A
+    #    ## Using TFP diag + LR
+    #    ed = jnp.linalg.eigh(Kmm+self.g_nug*jnp.eye(self.M))
+    #    U = Knm @ ed[1] @ jnp.diag(jnp.sqrt(1/ed[0]))
+    #    #U @ U.T - Qnn = 0.
+    #    dist = tfp.distributions.MultivariateNormalDiagPlusLowRankCovariance(cov_diag_factor = (sigma2+self.g_nug)*jnp.ones(self.N), cov_perturb_factor = U)
+    #    ## CODE BLOCK A
+    #    ret = kstar @ dist.cov_operator.solve(self.y.reshape((-1,1))).flatten()
+
+    #    return ret
+
     def pred(self, XX):
         ell = jnp.exp(self.params['ell'])
         sigma2 = jnp.exp(self.params['sigma2'])
 
-        Knm = self.get_Knm(self.params)
+        Knm = self.get_Knm(self.X, self.params)
         Kmm = self.get_Kmm(self.params)
-        #Knn = self.get_K(self.X, self.X, ell)
 
-        kstar = self.get_K(XX, self.X, ell)
+        #kstar = self.get_K(XX, self.X, ell)
+        #kstar = self.get_K(XX, self.X, ell)
+        kstar = self.get_Knm(XX, self.params)
 
-        # Naive inversion
-        #Qnn = Knm @ jnp.linalg.solve(Kmm + self.g_nug*jnp.eye(self.M), Knm.T)
-        #QI = Qnn+sigma2*jnp.eye(self.N)
-        #ret = kstar @ np.linalg.solve(QI, self.y)
-
-        ## CODE BLOCK A
-        ## Using TFP diag + LR
-        ed = jnp.linalg.eigh(Kmm+self.g_nug*jnp.eye(self.M))
-        U = Knm @ ed[1] @ jnp.diag(jnp.sqrt(1/ed[0]))
-        #U @ U.T - Qnn = 0.
-        dist = tfp.distributions.MultivariateNormalDiagPlusLowRankCovariance(cov_diag_factor = (sigma2+self.g_nug)*jnp.ones(self.N), cov_perturb_factor = U)
-        ## CODE BLOCK A
-        ret = kstar @ dist.cov_operator.solve(self.y.reshape((-1,1))).flatten()
-
+        ret = kstar@jnp.linalg.solve(Kmm+ Knm.T @ Knm / sigma2, Knm.T @ y)/sigma2
         return ret
+
 
     def compile(self):
         self.get_elbo = jax.jit(self.elbo_pre)
@@ -269,11 +285,11 @@ class TGP(VIGP):
         self.params['Z'] = Z_init
         self.meth_name = 'SGGP'
 
-    def get_Knm(self,params):
+    def get_Knm(self,X,params):
         ell = jnp.exp(params['ell'])
         sigma2 = jnp.exp(params['sigma2'])
         Z = params['Z']
-        return self.get_K(self.X, Z, ell)
+        return self.get_K(X, Z, ell)
 
     def get_Kmm(self,params):
         ell = jnp.exp(params['ell'])
@@ -290,11 +306,11 @@ class M1GP(VIGP):
         self.params['A'] = A_init
         self.meth_name = 'M1GP'
 
-    def get_Knm(self,params):
+    def get_Knm(self,X,params):
         ell = jnp.exp(params['ell'])
         sigma2 = jnp.exp(params['sigma2'])
         A = params['A']
-        Kxx = self.get_K(self.X, self.X, ell)
+        Kxx = self.get_K(X, self.X, ell)
         return Kxx @ A.T
 
     def get_Kmm(self,params):
@@ -316,7 +332,7 @@ class M2GP(VIGP):
         self.params['Z'] = Z_init
         self.meth_name = 'M2GP'
 
-    def get_Knm(self,params):
+    def get_Knm(self,X,params):
         ell = jnp.exp(params['ell'])
         sigma2 = jnp.exp(params['sigma2'])
         A = params['A']
@@ -324,9 +340,9 @@ class M2GP(VIGP):
 
         #K_big = np.zeros([N,M,D])
         #for m in range(M):
-        #    K = self.get_K(self.X, Z[m,:,:], ell)
+        #    K = self.get_K(X, Z[m,:,:], ell)
         #    K_big[:,m,:] = K
-        K_big = jnp.transpose(jax.vmap(lambda z: self.get_K(self.X, z, ell))(Z), [1, 0, 2])
+        K_big = jnp.transpose(jax.vmap(lambda z: self.get_K(X, z, ell))(Z), [1, 0, 2])
 
         #Kxz = np.zeros([N,M])
         #for m in range(M):

@@ -45,9 +45,10 @@ modf = TGP(X,y,M=M)
 modb = TGP(X,y,M=M)
 moda = TGP(X,y,M=M)
 
-modf.fit(iters=100,ls='fixed_lr',ls_params={'lr':1e-6})
-modb.fit(iters=100,ls='backtracking')
-moda.fit(iters=100,ls='backtracking',pc='exp_ada')
+modf.fit(iters=500,ls='fixed_lr',ls_params={'lr':1e-6})
+modb.fit(iters=500,ls='backtracking')
+moda.fit(iters=500,ls='backtracking',pc='exp_ada',pc_params={'beta2':0.0})
+#moda.fit(iters=100,ls='backtracking',pc='exp_ada')
 
 print(np.nanmin(modf.costs))
 print(np.nanmin(modb.costs))

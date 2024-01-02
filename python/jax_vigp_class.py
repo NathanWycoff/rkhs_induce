@@ -42,7 +42,7 @@ class YAJO(object):
             defaults = {
                     'lr_init' : 1.,
                     'shrink' : 0.2,
-                    #'grow' : 2,
+                    'grow' : 2,
                     'max_iter' : 15,
                     }
         elif self.ls=='fixed_lr':
@@ -74,7 +74,7 @@ class YAJO(object):
             raise Exception("Unknown pc")
 
         for s in defaults:
-            if s not in self.ls_params:
+            if s not in self.pc_params:
                 self.pc_params[s] = defaults[s]
 
     def step(self, params, optstate):
@@ -100,7 +100,11 @@ class YAJO(object):
             raise Exception("Bad pc.")
 
         if self.ls=='backtracking':
-            lr = self.ls_params['lr_init']
+            #ss = self.ls_params['lr_init']
+            if 'last_ls_ss' in optstate:
+                ss = optstate['last_ls_ss'] * self.ls_params['grow']
+            else:
+                ss = self.ls_params['lr_init']
             candval = np.inf
             candgrad_finite = False
             it = 0
@@ -108,35 +112,45 @@ class YAJO(object):
                 it += 1
                 cand_params = {}
                 for v in params:
-                    cand_params[v] = params[v] + lr * sd[v]
-                lr *= self.ls_params['shrink']
+                    cand_params[v] = params[v] + ss * sd[v]
+                ss *= self.ls_params['shrink']
                 candval, candgrad = self.vng(cand_params)
+
+                if candval <= -1e8:
+                    print("yeboi")
+                    import IPython; IPython.embed()
 
                 candgrad_finite = True
                 for v in candgrad:
                     if np.any(~np.isfinite(candgrad[v])):
                         candgrad_finite = False
+            # Undo last shrink if ss was ok.
+            ss /= self.ls_params['shrink']
             if self.debug:
                 print("ls took %d iters"%it)
                 print("old cost:%f"%val)
                 print("new cost:%f"%candval)
             if it==0:
+                print("it should never be 0.")
                 import IPython; IPython.embed()
             ls_failed = candval > val or (not np.isfinite(candval))
             params = cand_params
         elif self.ls=='fixed_lr':
             ls_failed = False
             for v in params:
-                params[v] += self.ls_params['lr'] * sd[v]
+                params[v] += self.ls_params['ss'] * sd[v]
         else:
             raise Exception("Bad ls.")
 
         if ls_failed:
-            print("Line search failed!")
+            if self.debug:
+                print("Line search failed!")
             optstate['done'] = True
             optstate['message'] = 'ls_failure'
 
         optstate['it'] += 1
+        optstate['last_ls_it'] = it
+        optstate['last_ls_ss'] = ss
 
         return params, optstate, val, grad
 
@@ -185,11 +199,11 @@ class VIGP(object):
         ed = jnp.linalg.eigh(Kmm+self.g_nug*jnp.eye(self.M))
         U = Knm @ ed[1] @ jnp.diag(jnp.sqrt(1/ed[0]))
         #U @ U.T - Qnn = 0.
-        dist = tfp.distributions.MultivariateNormalDiagPlusLowRankCovariance(cov_diag_factor = sigma2*jnp.ones(self.N), cov_perturb_factor = U)
+        dist = tfp.distributions.MultivariateNormalDiagPlusLowRankCovariance(cov_diag_factor = (sigma2+self.g_nug)*jnp.ones(self.N), cov_perturb_factor = U)
         ## CODE BLOCK A
         ll = dist.log_prob(y)
 
-        reg = 1./(2.*sigma2)*jnp.sum(ktilde)
+        reg = 1./(2.*(sigma2+self.g_nug))*jnp.sum(ktilde)
 
         return -ll + reg
 
@@ -213,7 +227,7 @@ class VIGP(object):
         ed = jnp.linalg.eigh(Kmm+self.g_nug*jnp.eye(self.M))
         U = Knm @ ed[1] @ jnp.diag(jnp.sqrt(1/ed[0]))
         #U @ U.T - Qnn = 0.
-        dist = tfp.distributions.MultivariateNormalDiagPlusLowRankCovariance(cov_diag_factor = sigma2*jnp.ones(self.N), cov_perturb_factor = U)
+        dist = tfp.distributions.MultivariateNormalDiagPlusLowRankCovariance(cov_diag_factor = (sigma2+self.g_nug)*jnp.ones(self.N), cov_perturb_factor = U)
         ## CODE BLOCK A
         ret = kstar @ dist.cov_operator.solve(self.y.reshape((-1,1))).flatten()
 
@@ -224,24 +238,27 @@ class VIGP(object):
         self.grad_elbo = jax.jit(jax.grad(self.elbo_pre))
         self.vng_elbo = jax.jit(jax.value_and_grad(self.elbo_pre))
 
-    def fit(self, iters = 100, ls = 'fixed_lr', ls_params = {}, verbose = True, pc = 'id'):
-        self.opt = YAJO(self.vng_elbo, self.params, ls=ls, ls_params=ls_params, pc = pc)
+    def fit(self, iters = 100, ls = 'fixed_lr', ls_params = {}, verbose = True, pc = 'id', pc_params = {}):
+        self.opt = YAJO(self.vng_elbo, self.params, ls=ls, ls_params=ls_params, pc = pc, pc_params = pc_params)
         optstate = self.opt.init_state()
 
         self.costs = np.nan*np.zeros(iters)
+        self.ls_its = np.nan*np.zeros(iters)
+        self.ss = np.nan*np.zeros(iters)
         for i in tqdm(range(iters), disable = not verbose):
             #cost, grad = self.vng_elbo(self.params)
             self.params, optstate, cost, grad = self.opt.step(self.params, optstate)
             self.costs[i] = cost
+            self.ls_its[i] = optstate['last_ls_it']
+            self.ss[i] = optstate['last_ls_ss']
+            if cost < -1e8:
+                print("we got em boys")
+                import IPython; IPython.embed()
             if optstate['done']:
-                print("Optim exit with message "+optstate['message'])
+                if verbose:
+                    print("Optim exit with message "+optstate['message'])
                 break
 
-        fig = plt.figure()
-        plt.plot(self.costs)
-        #plt.yscale('log')
-        plt.savefig(self.meth_name+"_cost.pdf")
-        plt.close()
 
 
 # Oh this is actually Titsias'

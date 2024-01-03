@@ -195,44 +195,15 @@ class VIGP(object):
         # Warning: assumes that correlation matrix diagonal is 1.
         ktilde = jnp.ones(self.N) - q_diag
 
-        ## CODE BLOCK A
-        ## Using TFP diag + LR
         ed = jnp.linalg.eigh(Kmm+self.g_nug*jnp.eye(self.M))
         U = Knm @ ed[1] @ jnp.diag(jnp.sqrt(1/ed[0]))
-        #U @ U.T - Qnn = 0.
+        #U @ U.T is Qnn in the notation of Titsias09.
         dist = tfp.distributions.MultivariateNormalDiagPlusLowRankCovariance(cov_diag_factor = (sigma2+self.g_nug)*jnp.ones(self.N), cov_perturb_factor = U)
-        ## CODE BLOCK A
         ll = dist.log_prob(y)
 
         reg = 1./(2.*(sigma2+self.g_nug))*jnp.sum(ktilde)
 
         return -ll + reg
-
-    #def pred(self, XX):
-    #    ell = jnp.exp(self.params['ell'])
-    #    sigma2 = jnp.exp(self.params['sigma2'])
-
-    #    Knm = self.get_Knm(self.params)
-    #    Kmm = self.get_Kmm(self.params)
-    #    #Knn = self.get_K(self.X, self.X, ell)
-
-    #    kstar = self.get_K(XX, self.X, ell)
-
-    #    # Naive inversion
-    #    #Qnn = Knm @ jnp.linalg.solve(Kmm + self.g_nug*jnp.eye(self.M), Knm.T)
-    #    #QI = Qnn+sigma2*jnp.eye(self.N)
-    #    #ret = kstar @ np.linalg.solve(QI, self.y)
-
-    #    ## CODE BLOCK A
-    #    ## Using TFP diag + LR
-    #    ed = jnp.linalg.eigh(Kmm+self.g_nug*jnp.eye(self.M))
-    #    U = Knm @ ed[1] @ jnp.diag(jnp.sqrt(1/ed[0]))
-    #    #U @ U.T - Qnn = 0.
-    #    dist = tfp.distributions.MultivariateNormalDiagPlusLowRankCovariance(cov_diag_factor = (sigma2+self.g_nug)*jnp.ones(self.N), cov_perturb_factor = U)
-    #    ## CODE BLOCK A
-    #    ret = kstar @ dist.cov_operator.solve(self.y.reshape((-1,1))).flatten()
-
-    #    return ret
 
     def pred(self, XX):
         ell = jnp.exp(self.params['ell'])

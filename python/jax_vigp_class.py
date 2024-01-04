@@ -9,13 +9,17 @@ import matplotlib.pyplot as plt
 import matplotlib.tri as mtri
 import matplotlib.cm as cm
 from tensorflow_probability.substrates import jax as tfp
-import jaxopt
 from jax import config
 from tqdm import tqdm
-import optax
 import warnings
 
-config.update("jax_enable_x64", True)
+PRECISION = '64'
+
+if PRECISION=='64':
+    config.update("jax_enable_x64", True)
+    npdtype = np.float64
+else:
+    npdtype = np.float32
 
 class YAJO(object):
     def __init__(self, vng, params, ls = 'backtrack', ls_params = {}, pc = 'id', pc_params = {}):
@@ -46,7 +50,7 @@ class YAJO(object):
                     'max_iter' : 15,
                     }
         elif self.ls=='fixed_lr':
-            defaults = {'lr' : 5e-3}
+            defaults = {'ss' : 5e-3}
         else:
             raise Exception("Unknown ls")
 
@@ -138,9 +142,11 @@ class YAJO(object):
         elif self.ls=='fixed_lr':
             ls_failed = False
             for v in params:
-                params[v] += self.ls_params['ss'] * sd[v]
+                ss = self.ls_params['ss']
+                params[v] += ss * sd[v]
         else:
             raise Exception("Bad ls.")
+        print(ss)
 
         if ls_failed:
             if self.debug:
@@ -148,8 +154,9 @@ class YAJO(object):
             optstate['done'] = True
             optstate['message'] = 'ls_failure'
 
-        optstate['it'] += 1
-        optstate['last_ls_it'] = it
+        optstate['it'] += 1 #TODO: having two distinct "it"s floating around is very confusing.
+        if self.ls in ['backtracking']:
+            optstate['last_ls_it'] = it
         optstate['last_ls_ss'] = ss
 
         return params, optstate, val, grad
@@ -162,9 +169,9 @@ class VIGP(object):
         self.meth_name = 'Var Induc GP'
         self.N,self.P = X.shape
         self.M = M
-        ell_init = jnp.repeat(jnp.array(np.log(1e-1), dtype = np.float64),P)
-        #sigma2_init = jnp.array(np.log(1e-5), dtype = np.float64)
-        sigma2_init = jnp.array(np.log(1e-8), dtype = np.float64)
+        ell_init = jnp.repeat(jnp.array(np.log(1e-1), dtype = npdtype),P)
+        #sigma2_init = jnp.array(np.log(1e-5), dtype = npdtype)
+        sigma2_init = jnp.array(np.log(1e-8), dtype = npdtype)
         self.params = {'ell': ell_init, 'sigma2' : sigma2_init}
         self.X = X
         self.y = y
@@ -236,11 +243,9 @@ class VIGP(object):
             #cost, grad = self.vng_elbo(self.params)
             self.params, optstate, cost, grad = self.opt.step(self.params, optstate)
             self.costs[i] = cost
-            self.ls_its[i] = optstate['last_ls_it']
+            if ls in ['backtracking']:
+                self.ls_its[i] = optstate['last_ls_it']
             self.ss[i] = optstate['last_ls_ss']
-            if cost < -1e8:
-                print("we got em boys")
-                import IPython; IPython.embed()
             if optstate['done']:
                 if verbose:
                     print("Optim exit with message "+optstate['message'])

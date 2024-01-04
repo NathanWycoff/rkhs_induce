@@ -2,3 +2,7 @@
 *.swp
 *.swo
 .venv/*
+simout/*
+sim_args.txt
+
+varsgpv1.0/*

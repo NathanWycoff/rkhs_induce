@@ -12,6 +12,7 @@ from tensorflow_probability.substrates import jax as tfp
 from jax import config
 from tqdm import tqdm
 import warnings
+import optax
 
 PRECISION = '64'
 
@@ -21,30 +22,192 @@ if PRECISION=='64':
 else:
     npdtype = np.float32
 
+#class YAJO(object):
+#    def __init__(self, vng, params, steps_per = 1, ls = 'backtrack', ls_params = {}, pc = 'id', pc_params = {}):
+#        self.vng = vng
+#        assert ls in ['fixed_lr','backtracking']
+#        self.ls = ls
+#        assert pc in ['id','exp_ada']
+#        self.pc = pc
+#        self.ls_params = ls_params
+#        self.pc_params = pc_params
+#
+#        self.steps_per = steps_per
+#
+#        self.debug = False
+#
+#        self._init_pc(params)
+#        self._init_ls()
+#
+#        #self._update_params = lambda x,d,ss: dict([(v,x[v]+ss*d[v]) for v in x])
+#        #def _update_params(params, pc_vars, curval, curgrad, ss, it):
+#        def _update_params(params, curgrad, ss, v_ada, it):
+#            cand_params = {}
+#            for v in params:
+#                cand_params[v] = params[v]
+#            candgrad = curgrad
+#
+#            beta2 = self.pc_params['beta2']
+#
+#            for step in range(self.steps_per):
+#                # Update precond
+#                sd = {}
+#                if self.pc=='id':
+#                    for v in candgrad:
+#                        sd[v] = -candgrad[v]
+#                elif self.pc=='exp_ada':
+#                    for v in params:
+#                        v_ada[v] = beta2*v_ada[v] + (1-beta2) * jnp.square(candgrad[v])
+#                        vhat = jnp.sqrt(v_ada[v] / (1-jnp.power(beta2, it)))
+#                        sd[v] = -candgrad[v] / (vhat + self.pc_params['eps'])
+#                else:
+#                    raise Exception("Bad pc.")
+#
+#                # Get new params
+#                for v in params:
+#                    cand_params[v] = cand_params[v] + ss * sd[v]
+#
+#                # Evaluate and increment counter.
+#                candval, candgrad = self.vng(cand_params)
+#                it += 1
+#
+#            return cand_params, v_ada, candval, candgrad 
+#        self.update_params = jax.jit(_update_params)
+#
+#
+#    def init_state(self):
+#        optstate = {'it':0,'done':False,'message':'inprog'}
+#        return optstate
+#
+#    def _init_ls(self):
+#        if self.ls=='backtracking':
+#            defaults = {
+#                    'lr_init' : 1.,
+#                    'shrink' : 0.2,
+#                    'grow' : 2,
+#                    'max_iter' : 15,
+#                    }
+#        elif self.ls=='fixed_lr':
+#            defaults = {'ss' : 5e-3}
+#        else:
+#            raise Exception("Unknown ls")
+#
+#        for s in defaults:
+#            if s not in self.ls_params:
+#                self.ls_params[s] = defaults[s]
+#
+#    def _init_pc(self, params):
+#        assert type(params)==dict
+#        self.pc_vars = {}
+#
+#        if self.pc=='id':
+#            defaults = {}
+#        elif self.pc=='exp_ada':
+#            self.pc_vars['v_ada'] = {}
+#            self.pc_vars['vhat'] = {}
+#            for v in params:
+#                self.pc_vars['v_ada'][v] = jnp.zeros_like(params[v])
+#                self.pc_vars['vhat'][v] = jnp.zeros_like(params[v])
+#            defaults = {
+#                    'beta2' : 0.999,
+#                    'eps' : 1e-8,
+#                    }
+#        else:
+#            raise Exception("Unknown pc")
+#
+#        for s in defaults:
+#            if s not in self.pc_params:
+#                self.pc_params[s] = defaults[s]
+#
+#    def step(self, params, optstate):
+#        assert type(params)==dict
+#        val, grad = self.vng(params)
+#
+#        if not np.isfinite(val):
+#            print("Nonfinite initial cost.")
+#            import IPython; IPython.embed()
+#
+#        if self.ls=='backtracking':
+#            #ss = self.ls_params['lr_init']
+#            if 'last_ls_ss' in optstate:
+#                ss = optstate['last_ls_ss'] * self.ls_params['grow']
+#            else:
+#                ss = self.ls_params['lr_init']
+#            candval = np.inf
+#            candgrad_finite = False
+#            it = 0
+#            while ((not candgrad_finite) or (np.isnan(candval)) or candval > val) and it<self.ls_params['max_iter']:
+#                it += 1
+#                #cand_params = {}
+#                #for v in params:
+#                #    cand_params[v] = params[v] + ss * sd[v]
+#                cand_params, self.pc_vars['v_ada'], candval, candgrad = self.update_params(params, grad, ss, self.pc_vars['v_ada'], optstate['it'])
+#                optstate['it'] += self.steps_per
+#                ss *= self.ls_params['shrink']
+#                #candval, candgrad = self.vng(cand_params)
+#
+#                candgrad_finite = True
+#                for v in candgrad:
+#                    if np.any(~np.isfinite(candgrad[v])):
+#                        candgrad_finite = False
+#            # Undo last shrink if ss was ok.
+#            ss /= self.ls_params['shrink']
+#            if self.debug:
+#                print("ls took %d iters"%it)
+#                print("old cost:%f"%val)
+#                print("new cost:%f"%candval)
+#            if it==0:
+#                print("it should never be 0.")
+#                import IPython; IPython.embed()
+#            ls_failed = candval > val or (not np.isfinite(candval))
+#            params = cand_params
+#        elif self.ls=='fixed_lr':
+#            ls_failed = False
+#            for v in params:
+#                ss = self.ls_params['ss']
+#                params[v] += ss * sd[v]
+#            optstate['it'] += 1 #TODO: having two distinct "it"s floating around is very confusing.
+#        else:
+#            raise Exception("Bad ls.")
+#
+#        if ls_failed:
+#            if self.debug:
+#                print("Line search failed!")
+#            optstate['done'] = True
+#            optstate['message'] = 'ls_failure'
+#
+#        if self.ls in ['backtracking']:
+#            optstate['last_ls_it'] = it
+#        optstate['last_ls_ss'] = ss
+#
+#        return params, optstate, val, grad
+
 class YAJO(object):
-    def __init__(self, vng, params, ls = 'backtrack', ls_params = {}, pc = 'id', pc_params = {}):
+    def __init__(self, vng, params, steps_per = 1, ls = 'backtrack', ls_params = {}):
         self.vng = vng
         assert ls in ['fixed_lr','backtracking']
         self.ls = ls
-        assert pc in ['id','exp_ada']
-        self.pc = pc
         self.ls_params = ls_params
-        self.pc_params = pc_params
+
+        self.steps_per = steps_per
 
         self.debug = False
 
-        self._init_pc(params)
         self._init_ls()
 
+        self.scale_updates = jax.jit(lambda u, ss: dict([(v,ss*u[v]) for v in u]))
 
-    def init_state(self):
-        optstate = {'it':0,'done':False,'message':'inprog'}
-        return optstate
+        self.optimizer = optax.adam(1.)
+        self.opt_state = self.optimizer.init(params)
+
+        self.out_it = 0
+        self.done = False
 
     def _init_ls(self):
         if self.ls=='backtracking':
             defaults = {
                     'lr_init' : 1.,
+                    'lr_max' : 1.,
                     'shrink' : 0.2,
                     'grow' : 2,
                     'max_iter' : 15,
@@ -58,76 +221,48 @@ class YAJO(object):
             if s not in self.ls_params:
                 self.ls_params[s] = defaults[s]
 
-    def _init_pc(self, params):
+    def step(self, params):
         assert type(params)==dict
-        self.pc_vars = {}
-
-        if self.pc=='id':
-            defaults = {}
-        elif self.pc=='exp_ada':
-            self.pc_vars['v_ada'] = {}
-            self.pc_vars['vhat'] = {}
-            for v in params:
-                self.pc_vars['v_ada'][v] = jnp.zeros_like(params[v])
-                self.pc_vars['vhat'][v] = jnp.zeros_like(params[v])
-            defaults = {
-                    'beta2' : 0.999,
-                    'eps' : 1e-8,
-                    }
-        else:
-            raise Exception("Unknown pc")
-
-        for s in defaults:
-            if s not in self.pc_params:
-                self.pc_params[s] = defaults[s]
-
-    def step(self, params, optstate):
-        assert type(params)==dict
+        assert not self.done
         val, grad = self.vng(params)
 
         if not np.isfinite(val):
             print("Nonfinite initial cost.")
             import IPython; IPython.embed()
 
-        sd = {}
-        if self.pc=='id':
-            for v in grad:
-                sd[v] = -grad[v]
-        elif self.pc=='exp_ada':
-            beta2 = self.pc_params['beta2']
-            vhat = {}
-            for v in params:
-                self.pc_vars['v_ada'][v] = beta2*self.pc_vars['v_ada'][v] + (1-beta2) * jnp.square(grad[v])
-                self.pc_vars['vhat'][v] = jnp.sqrt(self.pc_vars['v_ada'][v] / (1-jnp.power(beta2, optstate['it'])))
-                sd[v] = -grad[v] / (self.pc_vars['vhat'][v] + self.pc_params['eps'])
-        else:
-            raise Exception("Bad pc.")
-
         if self.ls=='backtracking':
             #ss = self.ls_params['lr_init']
-            if 'last_ls_ss' in optstate:
-                ss = optstate['last_ls_ss'] * self.ls_params['grow']
-            else:
+            if self.out_it==0:
                 ss = self.ls_params['lr_init']
+            else:
+                ss = jnp.minimum(self.last_ls_ss * self.ls_params['grow'], self.ls_params['lr_max'])
             candval = np.inf
             candgrad_finite = False
             it = 0
-            while ((not candgrad_finite) or (np.isnan(candval)) or candval > val) and it<self.ls_params['max_iter']:
+            candgrad = grad
+            while ((not candgrad_finite) or np.isnan(candval) or candval > val) and it<self.ls_params['max_iter']:
+                print("yeboi")
+                print(self.out_it)
                 it += 1
-                cand_params = {}
+                candparams = {}
                 for v in params:
-                    cand_params[v] = params[v] + ss * sd[v]
-                ss *= self.ls_params['shrink']
-                candval, candgrad = self.vng(cand_params)
+                    candparams[v] = jnp.copy(params[v])
 
-                if candval <= -1e8:
-                    print("yeboi")
-                    import IPython; IPython.embed()
+                for i in range(self.steps_per):
+                    updates, self.opt_state = self.optimizer.update(candgrad, self.opt_state)
+                    updates = self.scale_updates(updates, ss)
+                    candparams = optax.apply_updates(candparams, updates)
+                    candval, candgrad = self.vng(candparams)
+                    if np.isnan(candval) or candval > val:
+                        break
 
                 candgrad_finite = True
                 for v in candgrad:
                     if np.any(~np.isfinite(candgrad[v])):
                         candgrad_finite = False
+
+                ss *= self.ls_params['shrink']
+
             # Undo last shrink if ss was ok.
             ss /= self.ls_params['shrink']
             if self.debug:
@@ -138,7 +273,7 @@ class YAJO(object):
                 print("it should never be 0.")
                 import IPython; IPython.embed()
             ls_failed = candval > val or (not np.isfinite(candval))
-            params = cand_params
+            params = candparams
         elif self.ls=='fixed_lr':
             ls_failed = False
             for v in params:
@@ -146,20 +281,20 @@ class YAJO(object):
                 params[v] += ss * sd[v]
         else:
             raise Exception("Bad ls.")
-        print(ss)
 
         if ls_failed:
             if self.debug:
                 print("Line search failed!")
-            optstate['done'] = True
-            optstate['message'] = 'ls_failure'
+            self.done = True
+            self.message = 'ls_failure'
 
-        optstate['it'] += 1 #TODO: having two distinct "it"s floating around is very confusing.
         if self.ls in ['backtracking']:
-            optstate['last_ls_it'] = it
-        optstate['last_ls_ss'] = ss
+            self.last_ls_it = it
+        self.last_ls_ss = ss
 
-        return params, optstate, val, grad
+        self.out_it += 1
+
+        return params, val, grad
 
 
 
@@ -232,21 +367,23 @@ class VIGP(object):
         self.grad_elbo = jax.jit(jax.grad(self.elbo_pre))
         self.vng_elbo = jax.jit(jax.value_and_grad(self.elbo_pre))
 
-    def fit(self, iters = 100, ls = 'fixed_lr', ls_params = {}, verbose = True, pc = 'id', pc_params = {}):
-        self.opt = YAJO(self.vng_elbo, self.params, ls=ls, ls_params=ls_params, pc = pc, pc_params = pc_params)
-        optstate = self.opt.init_state()
+    def fit(self, iters = 100, ls = 'fixed_lr', ls_params = {}, verbose = True):
+        steps_per = 20
+        eiters = int(np.ceil(iters/steps_per))
 
-        self.costs = np.nan*np.zeros(iters)
-        self.ls_its = np.nan*np.zeros(iters)
-        self.ss = np.nan*np.zeros(iters)
-        for i in tqdm(range(iters), disable = not verbose):
+        self.opt = YAJO(self.vng_elbo, self.params, steps_per = steps_per, ls=ls, ls_params=ls_params)
+
+        self.costs = np.nan*np.zeros(eiters)
+        self.ls_its = np.nan*np.zeros(eiters)
+        self.ss = np.nan*np.zeros(eiters)
+        for i in tqdm(range(eiters), disable = not verbose):
             #cost, grad = self.vng_elbo(self.params)
-            self.params, optstate, cost, grad = self.opt.step(self.params, optstate)
+            self.params, cost, grad = self.opt.step(self.params)
             self.costs[i] = cost
             if ls in ['backtracking']:
-                self.ls_its[i] = optstate['last_ls_it']
-            self.ss[i] = optstate['last_ls_ss']
-            if optstate['done']:
+                self.ls_its[i] = self.opt.last_ls_it
+            self.ss[i] = self.opt.last_ls_ss
+            if self.opt.done:
                 if verbose:
                     print("Optim exit with message "+optstate['message'])
                 break

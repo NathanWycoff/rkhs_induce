@@ -241,8 +241,6 @@ class YAJO(object):
             it = 0
             candgrad = grad
             while ((not candgrad_finite) or np.isnan(candval) or candval > val) and it<self.ls_params['max_iter']:
-                print("yeboi")
-                print(self.out_it)
                 it += 1
                 candparams = {}
                 for v in params:

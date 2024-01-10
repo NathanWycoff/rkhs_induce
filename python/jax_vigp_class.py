@@ -199,6 +199,7 @@ class YAJO(object):
 
         self.optimizer = optax.adam(1.)
         self.opt_state = self.optimizer.init(params)
+        self.reset_after = 3
 
         self.out_it = 0
         self.done = False
@@ -240,11 +241,14 @@ class YAJO(object):
             candgrad_finite = False
             it = 0
             candgrad = grad
+
             while ((not candgrad_finite) or np.isnan(candval) or candval > val) and it<self.ls_params['max_iter']:
                 it += 1
                 candparams = {}
                 for v in params:
                     candparams[v] = jnp.copy(params[v])
+                if it>self.reset_after:
+                    self.opt_state = self.optimizer.init(params)
 
                 for i in range(self.steps_per):
                     updates, self.opt_state = self.optimizer.update(candgrad, self.opt_state)
@@ -269,8 +273,12 @@ class YAJO(object):
                 print("new cost:%f"%candval)
             if it==0:
                 print("it should never be 0.")
-                import IPython; IPython.embed()
+                if self.debug:
+                    import IPython; IPython.embed()
             ls_failed = candval > val or (not np.isfinite(candval))
+            if ls_failed and self.debug:
+                print('ls failed!')
+                import IPython; IPython.embed()
             params = candparams
         elif self.ls=='fixed_lr':
             ls_failed = False
@@ -383,7 +391,7 @@ class VIGP(object):
             self.ss[i] = self.opt.last_ls_ss
             if self.opt.done:
                 if verbose:
-                    print("Optim exit with message "+optstate['message'])
+                    print("Optim exit with message "+self.opt.message+" after "+str(i)+" outer its.")
                 break
 
 

@@ -21,8 +21,17 @@ config.update("jax_enable_x64", True)
 exec(open("python/jax_vigp_class.py").read())
 exec(open("python/sim_settings.py").read())
 
-M = int(sys.argv[1])
-seed = int(sys.argv[2])
+manual = False
+#manual = True
+
+if manual:
+    for i in range(10):
+        print("manual!")
+    M = 10
+    seed = 0
+else:
+    M = int(sys.argv[1])
+    seed = int(sys.argv[2])
 
 sim_id = str(M)+'_'+str(seed)
 
@@ -54,6 +63,7 @@ mod.fit(verbose=verbose, ls=ls, iters=max_iters)
 yy_hat = mod.pred(XX)
 
 td = time()-tt
+tpi = td / mod.opt.out_it
 mse = jnp.mean(jnp.square(yy_hat-yy))
 
 ## Run new method.
@@ -63,6 +73,7 @@ mod2.fit(verbose=verbose, ls=ls, iters=max_iters)
 yy_hat_2 = mod2.pred(XX)
 
 td2 = time()-tt
+tpi2 = td2 / mod2.opt.out_it
 mse2 = jnp.mean(jnp.square(yy_hat_2-yy))
 
 ## For debugging, show optimization cost.
@@ -84,6 +95,10 @@ plt.savefig(figsdir+"/"+sim_id+".pdf")
 plt.close()
 
 ## Save simulation results.
-df = pd.DataFrame([['tit',mse, td, M, seed], ['m2',mse2, td2, M, seed]])
-df.columns = ['Method','MSE','Time', 'M', 'seed']
+df = pd.DataFrame([['tit',mse, td, tpi, M, seed], ['m2',mse2, td2, tpi2, M, seed]])
+df.columns = ['Method','MSE','Time', 'TPI', 'M', 'seed']
 df.to_csv(simdir+'/'+sim_id+'.csv')
+
+if manual:
+    for i in range(10):
+        print("manual!")

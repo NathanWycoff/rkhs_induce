@@ -183,7 +183,7 @@ else:
 #        return params, optstate, val, grad
 
 class YAJO(object):
-    def __init__(self, vng, params, steps_per = 1, ls = 'backtrack', ls_params = {}):
+    def __init__(self, vng, params, steps_per = 1, ls = 'backtrack', ls_params = {}, debug = False):
         self.vng = vng
         assert ls in ['fixed_lr','backtracking']
         self.ls = ls
@@ -191,7 +191,7 @@ class YAJO(object):
 
         self.steps_per = steps_per
 
-        self.debug = False
+        self.debug = debug
 
         self._init_ls()
 
@@ -240,13 +240,13 @@ class YAJO(object):
             candval = np.inf
             candgrad_finite = False
             it = 0
-            candgrad = grad
 
             while ((not candgrad_finite) or np.isnan(candval) or candval > val) and it<self.ls_params['max_iter']:
                 it += 1
                 candparams = {}
                 for v in params:
                     candparams[v] = jnp.copy(params[v])
+                candgrad = grad
                 if it>self.reset_after:
                     self.opt_state = self.optimizer.init(params)
 
@@ -373,11 +373,11 @@ class VIGP(object):
         self.grad_elbo = jax.jit(jax.grad(self.elbo_pre))
         self.vng_elbo = jax.jit(jax.value_and_grad(self.elbo_pre))
 
-    def fit(self, iters = 100, ls = 'fixed_lr', ls_params = {}, verbose = True):
+    def fit(self, iters = 100, ls = 'fixed_lr', ls_params = {}, verbose = True, debug = False):
         steps_per = 20
         eiters = int(np.ceil(iters/steps_per))
 
-        self.opt = YAJO(self.vng_elbo, self.params, steps_per = steps_per, ls=ls, ls_params=ls_params)
+        self.opt = YAJO(self.vng_elbo, self.params, steps_per = steps_per, ls=ls, ls_params=ls_params, debug = debug)
 
         self.costs = np.nan*np.zeros(eiters)
         self.ls_its = np.nan*np.zeros(eiters)

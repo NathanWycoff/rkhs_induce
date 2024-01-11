@@ -15,6 +15,7 @@ import optax
 from time import time
 import sys
 import pandas as pd
+import pickle
 
 config.update("jax_enable_x64", True)
 
@@ -29,37 +30,57 @@ if manual:
         print("manual!")
     M = 10
     seed = 0
+    debug = True
 else:
     M = int(sys.argv[1])
     seed = int(sys.argv[2])
+    debug = False
 
 sim_id = str(M)+'_'+str(seed)
 
 np.random.seed(seed)
 
-P = 2
-N = 2000
-NN = 500
 D = get_D(M)
 
-X = np.random.uniform(size=[N,P])
-XX = np.random.uniform(size=[NN,P])
-y = np.cos(4*np.pi*np.sum(X, axis = 1))
-yy = np.cos(4*np.pi*np.sum(XX, axis = 1))
+if problem=='syn_sine':
+    P = 2
+    N = 2000
+    NN = 500
 
+    X = np.random.uniform(size=[N,P])
+    XX = np.random.uniform(size=[NN,P])
+    y = np.cos(4*np.pi*np.sum(X, axis = 1))
+    yy = np.cos(4*np.pi*np.sum(XX, axis = 1))
+elif problem in ['kin40k']:
+    with open(datdir+'/'+problem+'.pkl','rb') as f:
+        X, y, XX, yy = pickle.load(f)
+    N,P = X.shape
+    assert N == len(y)
+    NN = XX.shape[0]
+    assert NN == len(yy)
+    assert P==XX.shape[1]
+else:
+    raise Exception("Unknown problem.")
+
+## Rescaling
 mu_y = np.mean(y)
 sig_y = np.std(y)
 y = (y-mu_y) / sig_y
 yy = (yy-mu_y) / sig_y
 
+min_X = np.min(X, axis = 0)
+max_X = np.max(X, axis = 0)
+X = (X-min_X[np.newaxis,:]) / (max_X-min_X)[np.newaxis,:]
+XX = (XX-min_X[np.newaxis,:]) / (max_X-min_X)[np.newaxis,:]
+
 ## Run a short one to compile things
 mod = TGP(X, y, M)
-mod.fit(verbose=verbose, ls=ls, iters=20)
+mod.fit(verbose=verbose, ls=ls, iters=20, debug = debug)
 
 ## Run vanilla method.
 tt = time()
 mod = TGP(X, y, M)
-mod.fit(verbose=verbose, ls=ls, iters=max_iters)
+mod.fit(verbose=verbose, ls=ls, iters=max_iters, debug = debug)
 yy_hat = mod.pred(XX)
 
 td = time()-tt
@@ -69,7 +90,7 @@ mse = jnp.mean(jnp.square(yy_hat-yy))
 ## Run new method.
 tt = time()
 mod2 = M2GP(X, y, M,D=D)
-mod2.fit(verbose=verbose, ls=ls, iters=max_iters)
+mod2.fit(verbose=verbose, ls=ls, iters=max_iters, debug = debug)
 yy_hat_2 = mod2.pred(XX)
 
 td2 = time()-tt

@@ -6,6 +6,7 @@ import numpy as np
 
 simdir = './simout/'
 figsdir = './figsout/'
+datdir = 'pickles'
 
 #Ms =[5, 10, 15, 20]
 #Ms = np.power(2, np.arange(4,10))
@@ -28,3 +29,5 @@ get_D = lambda M: 5
 
 verbose = True
 
+#problem = 'syn_sine'
+problem = 'kin40k'

@@ -7,9 +7,14 @@ import shutil
 
 exec(open("python/sim_settings.py").read())
 
+if not os.path.exists(oversimdir):
+    os.makedirs(oversimdir)
 if os.path.exists(simdir):
     shutil.rmtree(simdir)
 os.makedirs(simdir)
+
+if not os.path.exists(overfigsdir):
+    os.makedirs(overfigsdir)
 if os.path.exists(figsdir):
     shutil.rmtree(figsdir)
 os.makedirs(figsdir)

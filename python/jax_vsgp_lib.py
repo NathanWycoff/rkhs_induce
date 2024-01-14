@@ -93,6 +93,8 @@ class YAJO(object):
                 for i in range(self.steps_per):
                     updates, self.opt_state = self.optimizer.update(candgrad, self.opt_state)
                     updates = self.scale_updates(updates, ss)
+                    #updates = self.scale_updates(candgrad, ss)
+                    #print("ignoring adam.")
                     candparams = optax.apply_updates(candparams, updates)
                     candval, candgrad = self.vng(candparams)
                     if np.isnan(candval) or candval > val:
@@ -121,10 +123,21 @@ class YAJO(object):
                 import IPython; IPython.embed()
             params = candparams
         elif self.ls=='fixed_lr':
+            #ls_failed = False
             ls_failed = False
-            for v in params:
-                ss = self.ls_params['ss']
-                params[v] += ss * sd[v]
+            #for v in params:
+            #    ss = self.ls_params['ss']
+            #    params[v] += ss * grad[v]
+            ss = self.ls_params['ss']
+            for i in range(self.steps_per):
+                updates, self.opt_state = self.optimizer.update(grad, self.opt_state)
+                updates = self.scale_updates(updates, ss)
+                params = optax.apply_updates(params, updates)
+                val, grad = self.vng(params)
+
+            if not np.isfinite(val):
+                ls_failed = True
+
         else:
             raise Exception("Bad ls.")
 
@@ -153,19 +166,22 @@ class VSGP(object):
         # COVAR =  sigma2*K + (gamma2+g_nug)*I
         sigma2_init = jnp.array(np.log(1.), dtype = npdtype) # Scale Parameter.
         gamma2_init = jnp.array(np.log(1e-8), dtype = npdtype) # Error Variance.
+        #gamma2_init = jnp.array(np.log(1.), dtype = npdtype) # Error Variance.
         self.params = {'ell': ell_init, 'sigma2' : sigma2_init, 'gamma2' : gamma2_init}
         self.X = X
         self.y = y
-        print("TODO: nug to 1e-8?")
+        print("TODO: jit to 1e-8?")
         self.g_nug = 1e-6
 
         self.kernel = lambda x,y, ell, sigma2: sigma2*jnp.exp(-jnp.sum(jnp.square(x-y)/ell))
         self.get_K = lambda X1, X2, ell, sigma2: jax.vmap(lambda x: jax.vmap(lambda y: self.kernel(x, y, ell, sigma2))(X2))(X1)
 
+        self.jit = jit
         self.compile(jit)
 
-        m_init = jnp.array(np.random.normal(size=[self.M]))
-        S_init = jnp.eye(self.M)
+        #m_init = jnp.array(np.random.normal(size=[self.M]))*1e-6
+        m_init = jnp.zeros(self.M, dtype = npdtype)
+        S_init = jnp.eye(self.M, dtype = npdtype)
         self.params['m'] = m_init
         self.params['S'] = S_init
 
@@ -183,6 +199,11 @@ class VSGP(object):
         m = params['m']
         S = params['S']
 
+        trust_tfp = True
+        #trust_tfp = False
+
+        gI = self.g_nug*jnp.eye(self.M, dtype=npdtype)
+
         Knm = self.get_Knm(self.X, params)
         Kmm = self.get_Kmm(params)
         #Knn = self.get_K(self.X, self.X, ell)
@@ -194,46 +215,34 @@ class VSGP(object):
         ktilde = sigma2*jnp.ones(self.N) - q_diag
 
         ## NOW COMPUTE TERMS OF LOSS FUNCTION
-        mu_y = Knm @ jnp.linalg.solve(Kmm, m)
-        dist_y = tfp.distributions.Normal(loc=mu_y, scale = jnp.sqrt(gamma2))
-        nll = -jnp.sum(dist_y.log_prob(self.y))
+        mu_y = Knm @ jnp.linalg.solve(Kmm+gI, m)
+        if trust_tfp:
+            dist_y = tfp.distributions.Normal(loc=mu_y, scale = jnp.sqrt(gamma2))
+            nll = -jnp.sum(dist_y.log_prob(self.y))
+        else:
+            nll = self.N/2.*jnp.log(gamma2) + 1./(2.*gamma2) * jnp.sum(jnp.square(self.y-mu_y))
+        #import IPython; IPython.embed()
 
-        tr1 = 1/(2*gamma2) * jnp.sum(ktilde)
+        tr1 = 1./(2.*gamma2) * jnp.sum(ktilde)
 
-        #tr2 = 0
-        #for n in range(N):
-        #    kk = (Kmmi @ Knm[n:(n+1),:].T)
-        #    LAMBDAn =  kk @ kk.T / gamma2
-        #    A = S @ LAMBDAn
-        #    tr2 += jnp.sum(jnp.diag(A))
-
-        #tr2 = 0
-        #for n in range(N):
-        #    kk = (Kmmi @ Knm[n:(n+1),:].T)
-        #    LAMBDAn =  kk @ kk.T / gamma2
-        #    A = S @ LAMBDAn
-        #    tr2 += jnp.sum(jnp.diag(A))
-
-        #tr22 = 0
-        #for n in range(N):
-        #    kk = (Kmmi @ Knm[n:(n+1),:].T)
-        #    tr22 += (kk.T @ S @ kk)/gamma2
-
-        #tr23 = 0
-        #KiSKi = Kmmi @ S @ Kmmi
-        #for n in range(N):
-        #    kk = Knm[n:(n+1),:].T
-        #    tr23 += (kk.T @ KiSKi @ kk)/gamma2
-
-        #tr24 = jnp.sum(Knm.T * (KiSKi @ Knm.T)) / gamma2
         KiSKi = Kmmi @ S @ Kmmi
         tr2 = jnp.sum(Knm.T * (KiSKi @ Knm.T)) / gamma2
 
-        dist_q = tfp.distributions.MultivariateNormalFullCovariance(loc=m, covariance_matrix=S)
-        dist_p = tfp.distributions.MultivariateNormalFullCovariance(loc=jnp.zeros(self.M,dtype=npdtype), covariance_matrix=Kmm+self.g_nug*jnp.eye(self.M,dtype=npdtype))
-        kl = dist_q.kl_divergence(dist_p)
+        ### KL via TFP
+        if trust_tfp:
+            dist_q = tfp.distributions.MultivariateNormalFullCovariance(loc=m, covariance_matrix=S)
+            dist_p = tfp.distributions.MultivariateNormalFullCovariance(loc=jnp.zeros(self.M,dtype=npdtype), covariance_matrix=Kmm+gI)
+            kl = dist_q.kl_divergence(dist_p)
+        else:
+            S_slogdet = jnp.linalg.slogdet(S)
+            kl = jnp.linalg.slogdet(Kmm+gI)[1] - S_slogdet[1] + jnp.sum(jnp.diag(Kmmi@S)) + m.T @ Kmmi @ m - self.P 
+            kl = jax.lax.cond(S_slogdet[0]<0, lambda: np.inf, lambda: kl)
+            #Other way KL just for fun:
+            #Si = jnp.linalg.inv(S)
+            #kl = - jnp.linalg.slogdet(Kmm+gI)[1] + S_slogdet[1] + jnp.sum(jnp.diag(Si@(Kmm+gI))) + m.T @ Si @ m - self.P 
 
         loss = nll + tr1 + tr2 + kl
+        #loss = nll 
 
         return loss
 
@@ -266,7 +275,10 @@ class VSGP(object):
         self.ls_its = np.nan*np.zeros(eiters)
         self.ss = np.nan*np.zeros(eiters)
         for i in tqdm(range(eiters), disable = not verbose):
-            self.get_elbo(self.params)
+            if not self.jit:
+                print("not nec")
+                self.get_elbo(self.params)
+                print("not nec")
             #cost, grad = self.vng_elbo(self.params)
             self.params, cost, grad = self.opt.step(self.params)
             self.costs[i] = cost
@@ -287,6 +299,12 @@ class HensmanGP(VSGP):
         Z_init = jnp.array(np.random.uniform(size=[self.M,self.P]))
         self.params['Z'] = Z_init
         self.meth_name = 'Hensman_et_al'
+
+        #Kmm = self.get_Kmm(self.params)
+        #gI = self.g_nug*jnp.eye(self.M,dtype=npdtype)
+        #L = np.linalg.cholesky(Kmm+gI)
+        #self.params['m'] = jnp.array(L @ np.random.normal(size=[self.M]))
+        #self.params['S'] = jnp.array(Kmm) + gI
 
     def get_Knm(self,X,params):
         ell = jnp.exp(params['ell'])

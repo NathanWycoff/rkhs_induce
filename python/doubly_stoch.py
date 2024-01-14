@@ -20,12 +20,17 @@ np.random.seed(123)
 
 N = 2000
 NN = 500
-M = 100
+#M = 100
+#M = 20
+M = 10
 P = 1
 
 verbose = True
 debug = True
-ls = 'backtracking'
+#ls = 'backtracking'
+ls = 'fixed_lr'
+jit = True
+#jit = False
 
 func = lambda X: np.cos(4*np.pi*np.sum(X, axis = 1))
 #func = lambda X: np.ones([X.shape[0]])
@@ -40,9 +45,12 @@ sig_y = np.std(y)
 y = (y-mu_y) / (sig_y+1e-8)
 yy = (yy-mu_y) / (sig_y+1e-8)
 
-mod = HensmanGP(X, y, M=M, jit = False)
+mod = HensmanGP(X, y, M=M, jit = jit)
 pred_pre = mod.pred(XX)
-mod.fit(verbose=verbose, ls=ls, iters=200, debug = debug)
+if ls=='backtracking':
+    mod.fit(verbose=verbose, ls=ls, iters=200, debug = debug)
+elif ls=='fixed_lr':
+    mod.fit(verbose=verbose, ls=ls, iters=400, debug = debug, ls_params = {'ss':1e-4})
 pred_post = mod.pred(XX)
 
 #mod.params
@@ -50,19 +58,14 @@ pred_post = mod.pred(XX)
 #S = mod.params['S']
 #np.max(np.abs(S - S.T))
 
-fig = plt.figure(figsize=[10,3])
-plt.subplot(1,3,1)
+fig = plt.figure(figsize=[8,3])
+plt.subplot(1,2,1)
 plt.scatter(XX[:,0], yy, label = 'True')
 plt.scatter(XX[:,0], pred_pre, label = 'pre')
 plt.scatter(XX[:,0], pred_post, label = 'post')
 plt.legend()
 
-plt.subplot(1,3,2)
-plt.scatter(XX[:,0], yy, label = 'True')
-plt.scatter(XX[:,0], pred_post, label = 'post')
-plt.legend()
-
-plt.subplot(1,3,3)
+plt.subplot(1,2,2)
 plt.plot(mod.costs)
 
 plt.savefig("temp.pdf")

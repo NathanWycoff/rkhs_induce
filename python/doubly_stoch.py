@@ -18,12 +18,14 @@ exec(open("python/jax_vsgp_lib.py").read())
 
 np.random.seed(123)
 
+#N = 5
 N = 2000
 NN = 500
 #M = 100
 #M = 20
 M = 10
 P = 1
+iters = 1000
 
 verbose = True
 debug = True
@@ -49,9 +51,9 @@ mod = HensmanGP(X, y, M=M, jit = jit, natural = False)
 fit_pre = mod.pred(X)
 pred_pre = mod.pred(XX)
 if ls=='backtracking':
-    mod.fit(verbose=verbose, ls=ls, iters=200, debug = debug)
+    mod.fit(verbose=verbose, ls=ls, iters=iters, debug = debug)
 elif ls=='fixed_lr':
-    mod.fit(verbose=verbose, ls=ls, iters=200, debug = debug, ls_params = {'ss':1e-4})
+    mod.fit(verbose=verbose, ls=ls, iters=iters, debug = debug, ls_params = {'ss':1e-4})
 fit_post = mod.pred(X)
 pred_post = mod.pred(XX)
 
@@ -68,6 +70,7 @@ plt.subplot(1,2,1)
 plt.scatter(XX[:,0], yy, label = 'True')
 plt.scatter(XX[:,0], pred_pre, label = 'pre')
 plt.scatter(XX[:,0], pred_post, label = 'post')
+plt.scatter(X[:,0], y, label = 'Train')
 plt.legend()
 
 plt.subplot(1,2,2)

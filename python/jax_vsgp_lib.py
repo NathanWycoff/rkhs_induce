@@ -36,10 +36,7 @@ class YAJO(object):
         self._init_ls()
 
         self.scale_updates = jax.jit(lambda u, ss: dict([(v,ss*u[v]) for v in u]))
-        #print("scale_updates is evil!")
-        #self.scale_updates = jax.jit(lambda u, ss: dict([(v,ss*u[v]) if v=='theta1' else (v,0.*u[v])for v in u]))
 
-        #self.optimizer = optax.adam(1.)
         self.optimizer = optax.adam(1.)
         self.opt_state = self.optimizer.init(params)
         self.reset_after = 3
@@ -72,7 +69,9 @@ class YAJO(object):
 
         if not np.isfinite(val):
             print("Nonfinite initial cost.")
-            import IPython; IPython.embed()
+            if self.debug:
+                import IPython; IPython.embed()
+            raise Exception("Nonfinite initial cost.")
 
         if self.ls=='backtracking':
             #ss = self.ls_params['lr_init']
@@ -96,8 +95,6 @@ class YAJO(object):
                 for i in range(self.steps_per):
                     updates, self.opt_state = self.optimizer.update(candgrad, self.opt_state)
                     updates = self.scale_updates(updates, ss)
-                    #updates = self.scale_updates(candgrad, ss)
-                    #print("ignoring adam.")
                     candparams = optax.apply_updates(candparams, updates)
                     candval, candgrad = self.vng(candparams)
                     if np.isnan(candval) or candval > val:
@@ -126,11 +123,7 @@ class YAJO(object):
                 import IPython; IPython.embed()
             params = candparams
         elif self.ls=='fixed_lr':
-            #ls_failed = False
             ls_failed = False
-            #for v in params:
-            #    ss = self.ls_params['ss']
-            #    params[v] += ss * grad[v]
             ss = self.ls_params['ss']
             for i in range(self.steps_per):
                 updates, self.opt_state = self.optimizer.update(grad, self.opt_state)
@@ -165,11 +158,10 @@ class VSGP(object):
         self.N,self.P = X.shape
         self.M = M
         ell_init = jnp.repeat(jnp.array(np.log(1e-1), dtype = npdtype),P)
-        #gamma2_init = jnp.array(np.log(1e-5), dtype = npdtype)
         # COVAR =  sigma2*K + (gamma2+g_nug)*I
         sigma2_init = jnp.array(np.log(1.), dtype = npdtype) # Scale Parameter.
-        gamma2_init = jnp.array(np.log(1e-8), dtype = npdtype) # Error Variance.
-        #gamma2_init = jnp.array(np.log(1.), dtype = npdtype) # Error Variance.
+        #gamma2_init = jnp.array(np.log(1e-8), dtype = npdtype) # Error Variance.
+        gamma2_init = jnp.array(np.log(1e-4), dtype = npdtype) # Error Variance.
         self.params = {'ell': ell_init, 'sigma2' : sigma2_init, 'gamma2' : gamma2_init}
         self.X = X
         self.y = y
@@ -183,7 +175,6 @@ class VSGP(object):
         self.jit = jit
         self.compile(jit)
 
-        #m_init = jnp.array(np.random.normal(size=[self.M]))*1e-6
         m_init = jnp.zeros(self.M, dtype = npdtype)
         S_init = jnp.eye(self.M, dtype = npdtype)
         if self.natural:
@@ -243,31 +234,11 @@ class VSGP(object):
             nll = -jnp.sum(dist_y.log_prob(self.y))
         else:
             nll = self.N/2.*jnp.log(gamma2) + 1./(2.*gamma2) * jnp.sum(jnp.square(self.y-mu_y))
-        #import IPython; IPython.embed()
 
         tr1 = 1./(2.*gamma2) * jnp.sum(ktilde)
 
         KiSKi = Kmmi @ S @ Kmmi
         tr2 = jnp.sum(Knm.T * (KiSKi @ Knm.T)) / gamma2
-
-        ##import IPython; IPython.embed()
-        #print('ye')
-        #import IPython; IPython.embed()
-        #tr2 = 0
-        #for n in range(self.N):
-        #    kk = (Kmmi @ Knm[n:(n+1),:].T)
-        #    LAMBDAn =  kk @ kk.T 
-        #    A = S @ LAMBDAn
-        #    tr2 += jnp.sum(jnp.diag(A))
-        #tr2 /= gamma2
-        #print('boi')
-
-        #tr23 = 0
-        #KiSKi = Kmmi @ S @ Kmmi
-        #for n in range(N):
-        #    kk = Knm[n:(n+1),:].T
-        #    tr23 += (kk.T @ KiSKi @ kk)/gamma2
-
 
         ### KL via TFP
         if trust_tfp:
@@ -327,8 +298,8 @@ class VSGP(object):
             self.vng_elbo = jax.value_and_grad(self.elbo_pre)
 
     def fit(self, iters = 100, ls = 'fixed_lr', ls_params = {}, verbose = True, debug = False):
-        #steps_per = 20
-        steps_per = 1
+        steps_per = 20
+        #steps_per = 1
         eiters = int(np.ceil(iters/steps_per))
 
         self.opt = YAJO(self.vng_elbo, self.params, steps_per = steps_per, ls=ls, ls_params=ls_params, debug = debug)
@@ -359,12 +330,6 @@ class HensmanGP(VSGP):
         Z_init = jnp.array(np.random.uniform(size=[self.M,self.P]))
         self.params['Z'] = Z_init
         self.meth_name = 'Hensman_et_al'
-
-        #Kmm = self.get_Kmm(self.params)
-        #gI = self.g_nug*jnp.eye(self.M,dtype=npdtype)
-        #L = np.linalg.cholesky(Kmm+gI)
-        #self.params['m'] = jnp.array(L @ np.random.normal(size=[self.M]))
-        #self.params['S'] = jnp.array(Kmm) + gI
 
     def get_Knm(self,X,params):
         ell = jnp.exp(params['ell'])

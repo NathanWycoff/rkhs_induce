@@ -25,11 +25,12 @@ NN = 500
 #M = 20
 M = 10
 P = 1
-iters = 1000
+iters = 2000
 
 verbose = True
 debug = True
-ls = 'backtracking'
+#ls = 'backtracking'
+ls = 'lipschitz'
 #ls = 'fixed_lr'
 #jit = True
 jit = True
@@ -50,7 +51,7 @@ yy = (yy-mu_y) / (sig_y+1e-8)
 mod = HensmanGP(X, y, M=M, jit = jit, natural = False)
 fit_pre = mod.pred(X)
 pred_pre = mod.pred(XX)
-if ls=='backtracking':
+if ls in ['backtracking','lipschitz']:
     mod.fit(verbose=verbose, ls=ls, iters=iters, debug = debug)
 elif ls=='fixed_lr':
     mod.fit(verbose=verbose, ls=ls, iters=iters, debug = debug, ls_params = {'ss':1e-4})
@@ -66,12 +67,13 @@ print(np.sum(np.square(fit_post-y)))
 #np.max(np.abs(S - S.T))
 
 fig = plt.figure(figsize=[8,3])
-plt.subplot(1,2,1)
-plt.scatter(XX[:,0], yy, label = 'True')
-plt.scatter(XX[:,0], pred_pre, label = 'pre')
-plt.scatter(XX[:,0], pred_post, label = 'post')
-plt.scatter(X[:,0], y, label = 'Train')
-plt.legend()
+if P==1:
+    plt.subplot(1,2,1)
+    plt.scatter(XX[:,0], yy, label = 'True')
+    plt.scatter(XX[:,0], pred_pre, label = 'pre')
+    plt.scatter(XX[:,0], pred_post, label = 'post')
+    plt.scatter(X[:,0], y, label = 'Train')
+    plt.legend()
 
 plt.subplot(1,2,2)
 plt.plot(mod.costs)

@@ -25,7 +25,7 @@ else:
 class YAJO(object):
     def __init__(self, vng, params, steps_per = 1, ls = 'backtrack', ls_params = {}, debug = False):
         self.vng = vng
-        assert ls in ['fixed_lr','backtracking']
+        assert ls in ['fixed_lr','backtracking','lipschitz']
         self.ls = ls
         self.ls_params = ls_params
 
@@ -37,7 +37,10 @@ class YAJO(object):
 
         self.scale_updates = jax.jit(lambda u, ss: dict([(v,ss*u[v]) for v in u]))
 
-        self.optimizer = optax.adam(1.)
+        self.b2 = 0.999
+        self.eps = 1e-8
+        self.eps_root = 0.
+        self.optimizer = optax.adam(1., b2=self.b2, eps = self.eps, eps_root = self.eps_root)
         self.opt_state = self.optimizer.init(params)
         self.reset_after = 3
 
@@ -46,6 +49,14 @@ class YAJO(object):
 
     def _init_ls(self):
         if self.ls=='backtracking':
+            defaults = {
+                    'lr_init' : 1.,
+                    'lr_max' : 1.,
+                    'shrink' : 0.2,
+                    'grow' : 2,
+                    'max_iter' : 15,
+                    }
+        elif self.ls=='lipschitz':
             defaults = {
                     'lr_init' : 1.,
                     'lr_max' : 1.,
@@ -73,7 +84,7 @@ class YAJO(object):
                 import IPython; IPython.embed()
             raise Exception("Nonfinite initial cost.")
 
-        if self.ls=='backtracking':
+        if self.ls in ['backtracking','lipschitz']:
             #ss = self.ls_params['lr_init']
             if self.out_it==0:
                 ss = self.ls_params['lr_init']
@@ -97,13 +108,59 @@ class YAJO(object):
                     updates = self.scale_updates(updates, ss)
                     candparams = optax.apply_updates(candparams, updates)
                     candval, candgrad = self.vng(candparams)
-                    if np.isnan(candval) or candval > val:
-                        break
+                    if self.ls=='backtracking':
+                        if np.isnan(candval) or candval > val:
+                            break
+                    elif self.ls=='lipschitz':
+                        #nometric = True
+                        #nometric = False
+                        implied_L = 1/ss
+                        #c_relax = 0.5
+                        #c_relax = 2.
+                        #c_relax = 10
+                        c_relax = 1.
 
+                        nu = self.opt_state[0].nu
+                        vhat = {}
+                        for v in nu:
+                            vh = nu[v] / (1-jnp.power(self.b2, self.opt_state[0].count))
+                            vhat[v] = jnp.sqrt(vh+self.eps)+self.eps_root
+
+                        graddiff = 0.
+                        xdiff = 0.
+                        for v in params:
+                            #if nometric:
+                            #    graddiff += jnp.sum(jnp.square(grad[v]-candgrad[v]))
+                            #    xdiff += jnp.sum(jnp.square(params[v]-candparams[v]))
+                            #else:
+                            # Square nu inside 
+                            #graddiff += jnp.sum(jnp.square((grad[v]-candgrad[v])*vhat[v]))
+                            #xdiff += jnp.sum(jnp.square((params[v]-candparams[v])/vhat[v]))
+                            ## or outside?
+                            graddiff += jnp.sum(jnp.square(grad[v]-candgrad[v])/vhat[v])
+                            xdiff += jnp.sum(jnp.square(params[v]-candparams[v])*vhat[v])
+                        graddiff = jnp.sqrt(graddiff)
+                        xdiff = jnp.sqrt(xdiff)
+                        lipschitz_cond = graddiff <= c_relax * implied_L * xdiff
+
+                        #DRY2
+                        candgrad_finite = True
+                        for v in candgrad:
+                            if np.any(~np.isfinite(candgrad[v])):
+                                candgrad_finite = False
+                        #DRY2
+
+                        if (not candgrad_finite) or not lipschitz_cond:
+                            break
+                    else:
+                        raise Exception("Bad ls.")
+
+                #DRY2
                 candgrad_finite = True
                 for v in candgrad:
                     if np.any(~np.isfinite(candgrad[v])):
                         candgrad_finite = False
+                #DRY2
 
                 ss *= self.ls_params['shrink']
 

@@ -27,10 +27,10 @@ P = 1
 
 verbose = True
 debug = True
-#ls = 'backtracking'
-ls = 'fixed_lr'
+ls = 'backtracking'
+#ls = 'fixed_lr'
+#jit = True
 jit = True
-#jit = False
 
 func = lambda X: np.cos(4*np.pi*np.sum(X, axis = 1))
 #func = lambda X: np.ones([X.shape[0]])
@@ -46,12 +46,17 @@ y = (y-mu_y) / (sig_y+1e-8)
 yy = (yy-mu_y) / (sig_y+1e-8)
 
 mod = HensmanGP(X, y, M=M, jit = jit)
+fit_pre = mod.pred(X)
 pred_pre = mod.pred(XX)
 if ls=='backtracking':
     mod.fit(verbose=verbose, ls=ls, iters=200, debug = debug)
 elif ls=='fixed_lr':
-    mod.fit(verbose=verbose, ls=ls, iters=400, debug = debug, ls_params = {'ss':1e-4})
+    mod.fit(verbose=verbose, ls=ls, iters=200, debug = debug, ls_params = {'ss':1e-4})
+fit_post = mod.pred(X)
 pred_post = mod.pred(XX)
+
+print(np.sum(np.square(fit_pre-y)))
+print(np.sum(np.square(fit_post-y)))
 
 #mod.params
 #np.linalg.eigh(mod.params['S'])

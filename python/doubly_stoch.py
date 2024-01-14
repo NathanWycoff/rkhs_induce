@@ -45,7 +45,7 @@ sig_y = np.std(y)
 y = (y-mu_y) / (sig_y+1e-8)
 yy = (yy-mu_y) / (sig_y+1e-8)
 
-mod = HensmanGP(X, y, M=M, jit = jit)
+mod = HensmanGP(X, y, M=M, jit = jit, natural = False)
 fit_pre = mod.pred(X)
 pred_pre = mod.pred(XX)
 if ls=='backtracking':

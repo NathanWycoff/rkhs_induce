@@ -40,7 +40,7 @@ class YAJO(object):
         #self.scale_updates = jax.jit(lambda u, ss: dict([(v,ss*u[v]) if v=='theta1' else (v,0.*u[v])for v in u]))
 
         #self.optimizer = optax.adam(1.)
-        self.optimizer = optax.adam(1., b1 = 0.)
+        self.optimizer = optax.adam(1.)
         self.opt_state = self.optimizer.init(params)
         self.reset_after = 3
 
@@ -160,7 +160,7 @@ class YAJO(object):
 
 
 class VSGP(object):
-    def __init__(self, X, y, M = 10, jit = True):
+    def __init__(self, X, y, M = 10, jit = True, natural = True):
         self.meth_name = 'Var Induc GP'
         self.N,self.P = X.shape
         self.M = M
@@ -175,6 +175,7 @@ class VSGP(object):
         self.y = y
         print("TODO: jit to 1e-8?")
         self.g_nug = 1e-6
+        self.natural = natural
 
         self.kernel = lambda x,y, ell, sigma2: sigma2*jnp.exp(-jnp.sum(jnp.square(x-y)/ell))
         self.get_K = lambda X1, X2, ell, sigma2: jax.vmap(lambda x: jax.vmap(lambda y: self.kernel(x, y, ell, sigma2))(X2))(X1)
@@ -185,13 +186,15 @@ class VSGP(object):
         #m_init = jnp.array(np.random.normal(size=[self.M]))*1e-6
         m_init = jnp.zeros(self.M, dtype = npdtype)
         S_init = jnp.eye(self.M, dtype = npdtype)
-        #self.params['m'] = m_init
-        #self.params['S'] = S_init
+        if self.natural:
+            theta1_init = jnp.linalg.solve(S_init, m_init)
+            theta2_init = -jnp.linalg.inv(S_init)/2
+            self.params['theta1'] = theta1_init
+            self.params['theta2'] = theta2_init
+        else:
+            self.params['m'] = m_init
+            self.params['S'] = S_init
 
-        theta1_init = jnp.linalg.solve(S_init, m_init)
-        theta2_init = -jnp.linalg.inv(S_init)/2
-        self.params['theta1'] = theta1_init
-        self.params['theta2'] = theta2_init
 
     def get_Knm(self,params):
         raise NotImplementedError()
@@ -205,10 +208,17 @@ class VSGP(object):
         sigma2 = jnp.exp(params['sigma2'])
         gamma2 = jnp.exp(params['gamma2'])
         # DRY1
-        theta1 = params['theta1']
-        theta2 = params['theta2']
-        S = -1/2*jnp.linalg.inv(theta2)
-        m = S@theta1
+        if self.natural:
+            theta1 = params['theta1']
+            theta2 = params['theta2']
+            S = -1/2*jnp.linalg.inv(theta2)
+            print("Sus")
+            S = S.T @ S
+            print("Sus")
+            m = S@theta1
+        else:
+            m = params['m']
+            S = params['S']
         # DRY1
 
         #trust_tfp = True
@@ -267,7 +277,11 @@ class VSGP(object):
         else:
             S_slogdet = jnp.linalg.slogdet(S)
             kl = jnp.linalg.slogdet(Kmm+gI)[1] - S_slogdet[1] + jnp.sum(jnp.diag(Kmmi@S)) + m.T @ Kmmi @ m - self.P 
-            kl = jax.lax.cond(S_slogdet[0]<0, lambda: np.inf, lambda: kl)
+            lam1 = np.min(jnp.linalg.eigh(S)[0])
+            #kl = jax.lax.cond(S_slogdet[0]<0, lambda: np.inf, lambda: kl)
+            print("Todo: think. Jit?")
+            kl = jax.lax.cond(lam1<-1e-10, lambda: np.inf, lambda: kl)
+            #kl = jax.lax.cond(S_slogdet[0]<0, lambda: np.inf, lambda: kl)
             #Other way KL just for fun:
             #Si = jnp.linalg.inv(S)
             #kl = - jnp.linalg.slogdet(Kmm+gI)[1] + S_slogdet[1] + jnp.sum(jnp.diag(Si@(Kmm+gI))) + m.T @ Si @ m - self.P 
@@ -279,12 +293,19 @@ class VSGP(object):
         return loss
 
     def pred(self, XX):
-        # DRY1
-        theta1 = self.params['theta1']
-        theta2 = self.params['theta2']
-        S = -1/2.*jnp.linalg.inv(theta2)
-        m = S@theta1
         gI = self.g_nug*jnp.eye(self.M, dtype=npdtype)
+        # DRY1
+        if self.natural:
+            theta1 = self.params['theta1']
+            theta2 = self.params['theta2']
+            S = -1/2*jnp.linalg.inv(theta2)
+            print("Sus")
+            S = S.T @ S
+            print("Sus")
+            m = S@theta1
+        else:
+            m = self.params['m']
+            S = self.params['S']
         # DRY1
 
         Kmm = self.get_Kmm(self.params)
@@ -331,11 +352,9 @@ class VSGP(object):
                     print("Optim exit with message "+self.opt.message+" after "+str(i)+" outer its.")
                 break
 
-
-
 # Oh this is actually Titsias'
 class HensmanGP(VSGP):
-    def __init__(self, X, y, M = 10, jit = True):
+    def __init__(self, X, y, M = 10, jit = True, natural = True):
         VSGP.__init__(self, X, y, M, jit)
         Z_init = jnp.array(np.random.uniform(size=[self.M,self.P]))
         self.params['Z'] = Z_init

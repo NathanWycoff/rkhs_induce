@@ -25,7 +25,7 @@ else:
 class YAJO(object):
     def __init__(self, vng, params, steps_per = 1, ls = 'backtrack', ls_params = {}, debug = False):
         self.vng = vng
-        assert ls in ['fixed_lr','backtracking','lipschitz']
+        assert ls in ['fixed_lr','backtracking','lipschitz','armijo']
         self.ls = ls
         self.ls_params = ls_params
 
@@ -49,6 +49,14 @@ class YAJO(object):
 
     def _init_ls(self):
         if self.ls=='backtracking':
+            defaults = {
+                    'lr_init' : 1.,
+                    'lr_max' : 1.,
+                    'shrink' : 0.2,
+                    'grow' : 2,
+                    'max_iter' : 15,
+                    }
+        elif self.ls=='armijo':
             defaults = {
                     'lr_init' : 1.,
                     'lr_max' : 1.,
@@ -84,7 +92,7 @@ class YAJO(object):
                 import IPython; IPython.embed()
             raise Exception("Nonfinite initial cost.")
 
-        if self.ls in ['backtracking','lipschitz']:
+        if self.ls in ['backtracking','lipschitz','armijo']:
             #ss = self.ls_params['lr_init']
             if self.out_it==0:
                 ss = self.ls_params['lr_init']
@@ -105,30 +113,33 @@ class YAJO(object):
                     self.opt_state = self.optimizer.init(params)
 
                 for i in range(self.steps_per):
-                    #candgrad_last = candgrad
-                    candgrad_last = {}
-                    for v in candgrad:
-                        candgrad_last[v] = jnp.copy(candgrad[v])
-                    #candparams_last = candparams
-                    candparams_last = {}
-                    for v in candparams:
-                        candparams_last[v] = jnp.copy(candparams[v])
-
                     updates, self.opt_state = self.optimizer.update(candgrad, self.opt_state)
                     updates = self.scale_updates(updates, ss)
                     candparams = optax.apply_updates(candparams, updates)
+                    candgrad_last = candgrad
                     candval, candgrad = self.vng(candparams)
                     if self.ls=='backtracking':
                         ss_bad = np.isnan(candval) or candval > val
-                    elif self.ls=='lipschitz':
-                        #nometric = True
-                        #nometric = False
-                        implied_L = 1/ss
-                        #c_relax = 0.5
-                        #c_relax = 10.
-                        #c_relax = 0.1
+                    elif self.ls=='armijo':
+                        nu = self.opt_state[0].nu
+                        vhat = {}
+                        for v in nu:
+                            vh = nu[v] / (1-jnp.power(self.b2, self.opt_state[0].count))
+                            vhat[v] = jnp.sqrt(vh+self.eps)+self.eps_root
+                        gradnorm2 = 0.
+                        for v in params:
+                            # From first guy
+                            gradnorm2 += jnp.sum(jnp.square(candgrad_last[v])/vhat[v])
+                            #gradnorm2 += jnp.sum(jnp.square(candgrad_last[v]))
+                        #gradnorm = jnp.sqrt(gradnorm2)
+
+                        c_relax = 2./3.
                         #c_relax = 0.
-                        #c_relax = 1.
+                        #import IPython; IPython.embed()
+                        ss_bad = np.isnan(candval) or (candval > val - c_relax * ss*gradnorm2)
+
+                    elif self.ls=='lipschitz':
+                        implied_L = 1/ss
                         c_relax = 2./3.
 
                         nu = self.opt_state[0].nu
@@ -138,26 +149,20 @@ class YAJO(object):
                             vhat[v] = jnp.sqrt(vh+self.eps)+self.eps_root
 
                         graddiff = 0.
-                        xdiff = 0.
+                        #xdiff = 0.
                         other_graddiff = 0.
                         for v in params:
-                            ## From origin
-                            #graddiff += jnp.sum(jnp.square(grad[v]-candgrad[v])/vhat[v])
-                            #xdiff += jnp.sum(jnp.square(params[v]-candparams[v])*vhat[v])
+                            # From first guy
+                            graddiff += jnp.sum(jnp.square(grad[v]-candgrad[v])/vhat[v])
+                            other_graddiff += jnp.sum(jnp.square(grad[v])/vhat[v])
 
                             # From last guy
-                            graddiff += jnp.sum(jnp.square(candgrad_last[v]-candgrad[v])/vhat[v])
-                            other_graddiff += jnp.sum(jnp.square(candgrad_last[v])/vhat[v])
-                            #graddiff += jnp.sum(jnp.square(candgrad_last[v]-candgrad[v]))
-                            #other_graddiff += jnp.sum(jnp.square(candgrad_last[v]))
-                            xdiff += jnp.sum(jnp.square(candparams_last[v]-candparams[v])*vhat[v])
-
-                            ## From last guy (and squared)
-                            #graddiff += jnp.sum(jnp.square((candgrad_last[v]-candgrad[v])/vhat[v]))
-                            #xdiff += jnp.sum(jnp.square((candparams_last[v]-candparams[v])*vhat[v]))
+                            #graddiff += jnp.sum(jnp.square(candgrad_last[v]-candgrad[v])/vhat[v])
+                            #other_graddiff += jnp.sum(jnp.square(candgrad_last[v])/vhat[v])
+                            #xdiff += jnp.sum(jnp.square(candparams_last[v]-candparams[v])*vhat[v])
                         graddiff = jnp.sqrt(graddiff)
                         other_graddiff = jnp.sqrt(other_graddiff)
-                        xdiff = jnp.sqrt(xdiff)
+                        #xdiff = jnp.sqrt(xdiff)
                         #lipschitz_cond = graddiff < c_relax * implied_L * xdiff
                         lipschitz_cond = graddiff < c_relax * other_graddiff
 

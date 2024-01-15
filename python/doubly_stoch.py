@@ -30,9 +30,10 @@ iters = 2000
 
 verbose = True
 debug = True
-ls = 'backtracking'
+#ls = 'backtracking'
 #ls = 'lipschitz'
-#ls = 'fixed_lr'
+#ls = 'armijo'
+ls = 'fixed_lr'
 #jit = True
 jit = True
 
@@ -52,10 +53,10 @@ yy = (yy-mu_y) / (sig_y+1e-8)
 mod = HensmanGP(X, y, M=M, jit = jit, natural = False)
 fit_pre = mod.pred(X)
 pred_pre = mod.pred(XX)
-if ls in ['backtracking','lipschitz']:
+if ls in ['backtracking','lipschitz','armijo']:
     mod.fit(verbose=verbose, ls=ls, iters=iters, debug = debug)
 elif ls=='fixed_lr':
-    mod.fit(verbose=verbose, ls=ls, iters=iters, debug = debug, ls_params = {'ss':1e-4})
+    mod.fit(verbose=verbose, ls=ls, iters=iters, debug = debug, ls_params = {'ss':1e-2})
 fit_post = mod.pred(X)
 pred_post = mod.pred(XX)
 

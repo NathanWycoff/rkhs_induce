@@ -34,6 +34,7 @@ get_D = lambda M: 5
 #get_D = lambda M: 2
 
 mb_size = 256
+#mb_size = 16
 
 verbose = True
 

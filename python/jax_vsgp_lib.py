@@ -94,7 +94,8 @@ class YAJO(object):
             candgrad_finite = False
             it = 0
 
-            while ((not candgrad_finite) or np.isnan(candval) or candval > val) and it<self.ls_params['max_iter']:
+            ss_bad = True
+            while ss_bad and it<self.ls_params['max_iter']:
                 it += 1
                 candparams = {}
                 for v in params:
@@ -104,21 +105,31 @@ class YAJO(object):
                     self.opt_state = self.optimizer.init(params)
 
                 for i in range(self.steps_per):
+                    #candgrad_last = candgrad
+                    candgrad_last = {}
+                    for v in candgrad:
+                        candgrad_last[v] = jnp.copy(candgrad[v])
+                    #candparams_last = candparams
+                    candparams_last = {}
+                    for v in candparams:
+                        candparams_last[v] = jnp.copy(candparams[v])
+
                     updates, self.opt_state = self.optimizer.update(candgrad, self.opt_state)
                     updates = self.scale_updates(updates, ss)
                     candparams = optax.apply_updates(candparams, updates)
                     candval, candgrad = self.vng(candparams)
                     if self.ls=='backtracking':
-                        if np.isnan(candval) or candval > val:
-                            break
+                        ss_bad = np.isnan(candval) or candval > val
                     elif self.ls=='lipschitz':
                         #nometric = True
                         #nometric = False
                         implied_L = 1/ss
                         #c_relax = 0.5
-                        #c_relax = 2.
-                        #c_relax = 10
-                        c_relax = 1.
+                        #c_relax = 10.
+                        #c_relax = 0.1
+                        #c_relax = 0.
+                        #c_relax = 1.
+                        c_relax = 2./3.
 
                         nu = self.opt_state[0].nu
                         vhat = {}
@@ -128,20 +139,27 @@ class YAJO(object):
 
                         graddiff = 0.
                         xdiff = 0.
+                        other_graddiff = 0.
                         for v in params:
-                            #if nometric:
-                            #    graddiff += jnp.sum(jnp.square(grad[v]-candgrad[v]))
-                            #    xdiff += jnp.sum(jnp.square(params[v]-candparams[v]))
-                            #else:
-                            # Square nu inside 
-                            #graddiff += jnp.sum(jnp.square((grad[v]-candgrad[v])*vhat[v]))
-                            #xdiff += jnp.sum(jnp.square((params[v]-candparams[v])/vhat[v]))
-                            ## or outside?
-                            graddiff += jnp.sum(jnp.square(grad[v]-candgrad[v])/vhat[v])
-                            xdiff += jnp.sum(jnp.square(params[v]-candparams[v])*vhat[v])
+                            ## From origin
+                            #graddiff += jnp.sum(jnp.square(grad[v]-candgrad[v])/vhat[v])
+                            #xdiff += jnp.sum(jnp.square(params[v]-candparams[v])*vhat[v])
+
+                            # From last guy
+                            graddiff += jnp.sum(jnp.square(candgrad_last[v]-candgrad[v])/vhat[v])
+                            other_graddiff += jnp.sum(jnp.square(candgrad_last[v])/vhat[v])
+                            #graddiff += jnp.sum(jnp.square(candgrad_last[v]-candgrad[v]))
+                            #other_graddiff += jnp.sum(jnp.square(candgrad_last[v]))
+                            xdiff += jnp.sum(jnp.square(candparams_last[v]-candparams[v])*vhat[v])
+
+                            ## From last guy (and squared)
+                            #graddiff += jnp.sum(jnp.square((candgrad_last[v]-candgrad[v])/vhat[v]))
+                            #xdiff += jnp.sum(jnp.square((candparams_last[v]-candparams[v])*vhat[v]))
                         graddiff = jnp.sqrt(graddiff)
+                        other_graddiff = jnp.sqrt(other_graddiff)
                         xdiff = jnp.sqrt(xdiff)
-                        lipschitz_cond = graddiff <= c_relax * implied_L * xdiff
+                        #lipschitz_cond = graddiff < c_relax * implied_L * xdiff
+                        lipschitz_cond = graddiff < c_relax * other_graddiff
 
                         #DRY2
                         candgrad_finite = True
@@ -150,10 +168,11 @@ class YAJO(object):
                                 candgrad_finite = False
                         #DRY2
 
-                        if (not candgrad_finite) or not lipschitz_cond:
-                            break
+                        ss_bad = (not candgrad_finite) or (not lipschitz_cond)
                     else:
                         raise Exception("Bad ls.")
+                    if ss_bad:
+                        break
 
                 #DRY2
                 candgrad_finite = True
@@ -174,7 +193,9 @@ class YAJO(object):
                 print("it should never be 0.")
                 if self.debug:
                     import IPython; IPython.embed()
-            ls_failed = candval > val or (not np.isfinite(candval))
+            #ls_failed = candval > val or (not np.isfinite(candval))
+            #NOTE: this will still record fail if we get the condition on the last iteration.
+            ls_failed = it==self.ls_params['max_iter']
             if ls_failed and self.debug:
                 print('ls failed!')
                 import IPython; IPython.embed()

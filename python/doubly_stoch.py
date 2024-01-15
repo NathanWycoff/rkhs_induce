@@ -26,11 +26,12 @@ NN = 500
 M = 10
 P = 1
 iters = 2000
+#iters = 500
 
 verbose = True
 debug = True
-#ls = 'backtracking'
-ls = 'lipschitz'
+ls = 'backtracking'
+#ls = 'lipschitz'
 #ls = 'fixed_lr'
 #jit = True
 jit = True

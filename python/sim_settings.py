@@ -26,14 +26,14 @@ Ms = np.arange(40,360,40)
 reps = 2
 
 ## Optimization params
-ls = 'backtracking'
-#pc = 'id'
-pc = 'exp_ada'
-max_iters = 250
+lr = 1e-2
+max_iters = 2000
 
 #get_D = lambda M: int(np.ceil(np.sqrt(M)))
 get_D = lambda M: 5
 #get_D = lambda M: 2
+
+mb_size = 256
 
 verbose = True
 

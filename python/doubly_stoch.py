@@ -19,7 +19,7 @@ exec(open("python/jax_vsgp_lib.py").read())
 np.random.seed(123)
 
 #N = 5
-N = 2000
+N = 20000
 NN = 500
 #M = 100
 #M = 20
@@ -50,10 +50,12 @@ sig_y = np.std(y)
 y = (y-mu_y) / (sig_y+1e-8)
 yy = (yy-mu_y) / (sig_y+1e-8)
 
-mod = HensmanGP(X, y, M=M, jit = jit, natural = False)
+#mod = HensmanGP(X, y, M=M, jit = jit, natural = True)
+mod = M2GP(X, y, M=M, D=20, jit = jit, natural = True)
+#mod = HensmanGP(X, y, M=M, jit = jit, natural = True)
 fit_pre = mod.pred(X)
 pred_pre = mod.pred(XX)
-mod.fit(verbose=verbose, lr=5e-2, iters=iters, debug = debug)
+mod.fit(verbose=verbose, lr=1e-2, iters=iters, debug = debug, mb_size = mb_size)
 fit_post = mod.pred(X)
 pred_post = mod.pred(XX)
 

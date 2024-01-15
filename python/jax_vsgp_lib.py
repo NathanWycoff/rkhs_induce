@@ -22,219 +22,6 @@ if PRECISION=='64':
 else:
     npdtype = np.float32
 
-class YAJO(object):
-    def __init__(self, vng, params, steps_per = 1, ls = 'backtrack', ls_params = {}, debug = False):
-        self.vng = vng
-        assert ls in ['fixed_lr','backtracking','lipschitz','armijo']
-        self.ls = ls
-        self.ls_params = ls_params
-
-        self.steps_per = steps_per
-
-        self.debug = debug
-
-        self._init_ls()
-
-        self.scale_updates = jax.jit(lambda u, ss: dict([(v,ss*u[v]) for v in u]))
-
-        self.b2 = 0.999
-        self.eps = 1e-8
-        self.eps_root = 0.
-        self.optimizer = optax.adam(1., b2=self.b2, eps = self.eps, eps_root = self.eps_root)
-        self.opt_state = self.optimizer.init(params)
-        self.reset_after = 3
-
-        self.out_it = 0
-        self.done = False
-
-    def _init_ls(self):
-        if self.ls=='backtracking':
-            defaults = {
-                    'lr_init' : 1.,
-                    'lr_max' : 1.,
-                    'shrink' : 0.2,
-                    'grow' : 2,
-                    'max_iter' : 15,
-                    }
-        elif self.ls=='armijo':
-            defaults = {
-                    'lr_init' : 1.,
-                    'lr_max' : 1.,
-                    'shrink' : 0.2,
-                    'grow' : 2,
-                    'max_iter' : 15,
-                    }
-        elif self.ls=='lipschitz':
-            defaults = {
-                    'lr_init' : 1.,
-                    'lr_max' : 1.,
-                    'shrink' : 0.2,
-                    'grow' : 2,
-                    'max_iter' : 15,
-                    }
-        elif self.ls=='fixed_lr':
-            defaults = {'ss' : 5e-3}
-        else:
-            raise Exception("Unknown ls")
-
-        for s in defaults:
-            if s not in self.ls_params:
-                self.ls_params[s] = defaults[s]
-
-    def step(self, params):
-        assert type(params)==dict
-        assert not self.done
-        val, grad = self.vng(params)
-
-        if not np.isfinite(val):
-            print("Nonfinite initial cost.")
-            if self.debug:
-                import IPython; IPython.embed()
-            raise Exception("Nonfinite initial cost.")
-
-        if self.ls in ['backtracking','lipschitz','armijo']:
-            #ss = self.ls_params['lr_init']
-            if self.out_it==0:
-                ss = self.ls_params['lr_init']
-            else:
-                ss = jnp.minimum(self.last_ls_ss * self.ls_params['grow'], self.ls_params['lr_max'])
-            candval = np.inf
-            candgrad_finite = False
-            it = 0
-
-            ss_bad = True
-            while ss_bad and it<self.ls_params['max_iter']:
-                it += 1
-                candparams = {}
-                for v in params:
-                    candparams[v] = jnp.copy(params[v])
-                candgrad = grad
-                if it>self.reset_after:
-                    self.opt_state = self.optimizer.init(params)
-
-                for i in range(self.steps_per):
-                    updates, self.opt_state = self.optimizer.update(candgrad, self.opt_state)
-                    updates = self.scale_updates(updates, ss)
-                    candparams = optax.apply_updates(candparams, updates)
-                    candgrad_last = candgrad
-                    candval, candgrad = self.vng(candparams)
-                    if self.ls=='backtracking':
-                        ss_bad = np.isnan(candval) or candval > val
-                    elif self.ls=='armijo':
-                        nu = self.opt_state[0].nu
-                        vhat = {}
-                        for v in nu:
-                            vh = nu[v] / (1-jnp.power(self.b2, self.opt_state[0].count))
-                            vhat[v] = jnp.sqrt(vh+self.eps)+self.eps_root
-                        gradnorm2 = 0.
-                        for v in params:
-                            # From first guy
-                            gradnorm2 += jnp.sum(jnp.square(candgrad_last[v])/vhat[v])
-                            #gradnorm2 += jnp.sum(jnp.square(candgrad_last[v]))
-                        #gradnorm = jnp.sqrt(gradnorm2)
-
-                        c_relax = 2./3.
-                        #c_relax = 0.
-                        #import IPython; IPython.embed()
-                        ss_bad = np.isnan(candval) or (candval > val - c_relax * ss*gradnorm2)
-
-                    elif self.ls=='lipschitz':
-                        implied_L = 1/ss
-                        c_relax = 2./3.
-
-                        nu = self.opt_state[0].nu
-                        vhat = {}
-                        for v in nu:
-                            vh = nu[v] / (1-jnp.power(self.b2, self.opt_state[0].count))
-                            vhat[v] = jnp.sqrt(vh+self.eps)+self.eps_root
-
-                        graddiff = 0.
-                        #xdiff = 0.
-                        other_graddiff = 0.
-                        for v in params:
-                            # From first guy
-                            graddiff += jnp.sum(jnp.square(grad[v]-candgrad[v])/vhat[v])
-                            other_graddiff += jnp.sum(jnp.square(grad[v])/vhat[v])
-
-                            # From last guy
-                            #graddiff += jnp.sum(jnp.square(candgrad_last[v]-candgrad[v])/vhat[v])
-                            #other_graddiff += jnp.sum(jnp.square(candgrad_last[v])/vhat[v])
-                            #xdiff += jnp.sum(jnp.square(candparams_last[v]-candparams[v])*vhat[v])
-                        graddiff = jnp.sqrt(graddiff)
-                        other_graddiff = jnp.sqrt(other_graddiff)
-                        #xdiff = jnp.sqrt(xdiff)
-                        #lipschitz_cond = graddiff < c_relax * implied_L * xdiff
-                        lipschitz_cond = graddiff < c_relax * other_graddiff
-
-                        #DRY2
-                        candgrad_finite = True
-                        for v in candgrad:
-                            if np.any(~np.isfinite(candgrad[v])):
-                                candgrad_finite = False
-                        #DRY2
-
-                        ss_bad = (not candgrad_finite) or (not lipschitz_cond)
-                    else:
-                        raise Exception("Bad ls.")
-                    if ss_bad:
-                        break
-
-                #DRY2
-                candgrad_finite = True
-                for v in candgrad:
-                    if np.any(~np.isfinite(candgrad[v])):
-                        candgrad_finite = False
-                #DRY2
-
-                ss *= self.ls_params['shrink']
-
-            # Undo last shrink if ss was ok.
-            ss /= self.ls_params['shrink']
-            if self.debug:
-                print("ls took %d iters"%it)
-                print("old cost:%f"%val)
-                print("new cost:%f"%candval)
-            if it==0:
-                print("it should never be 0.")
-                if self.debug:
-                    import IPython; IPython.embed()
-            #ls_failed = candval > val or (not np.isfinite(candval))
-            #NOTE: this will still record fail if we get the condition on the last iteration.
-            ls_failed = it==self.ls_params['max_iter']
-            if ls_failed and self.debug:
-                print('ls failed!')
-                import IPython; IPython.embed()
-            params = candparams
-        elif self.ls=='fixed_lr':
-            ls_failed = False
-            ss = self.ls_params['ss']
-            for i in range(self.steps_per):
-                updates, self.opt_state = self.optimizer.update(grad, self.opt_state)
-                updates = self.scale_updates(updates, ss)
-                params = optax.apply_updates(params, updates)
-                val, grad = self.vng(params)
-
-            if not np.isfinite(val):
-                ls_failed = True
-
-        else:
-            raise Exception("Bad ls.")
-
-        if ls_failed:
-            if self.debug:
-                print("Line search failed!")
-            self.done = True
-            self.message = 'ls_failure'
-
-        if self.ls in ['backtracking']:
-            self.last_ls_it = it
-        self.last_ls_ss = ss
-
-        self.out_it += 1
-
-        return params, val, grad
-
-
 class VSGP(object):
     def __init__(self, X, y, M = 10, jit = True, natural = True):
         self.meth_name = 'Var Induc GP'
@@ -380,31 +167,21 @@ class VSGP(object):
             self.grad_elbo = jax.grad(self.elbo_pre)
             self.vng_elbo = jax.value_and_grad(self.elbo_pre)
 
-    def fit(self, iters = 100, ls = 'fixed_lr', ls_params = {}, verbose = True, debug = False):
-        steps_per = 20
-        #steps_per = 1
-        eiters = int(np.ceil(iters/steps_per))
+    def fit(self, iters = 100, lr = 5e-3, ls_params = {}, verbose = True, debug = False):
+        optimizer = optax.adam(lr)
+        opt_state = optimizer.init(self.params)
 
-        self.opt = YAJO(self.vng_elbo, self.params, steps_per = steps_per, ls=ls, ls_params=ls_params, debug = debug)
-
-        self.costs = np.nan*np.zeros(eiters)
-        self.ls_its = np.nan*np.zeros(eiters)
-        self.ss = np.nan*np.zeros(eiters)
-        for i in tqdm(range(eiters), disable = not verbose):
+        self.costs = np.nan*np.zeros(iters)
+        for i in tqdm(range(iters), disable = not verbose):
             if not self.jit:
                 print("not nec")
                 self.get_elbo(self.params)
                 print("not nec")
-            #cost, grad = self.vng_elbo(self.params)
-            self.params, cost, grad = self.opt.step(self.params)
+            cost, grad = self.vng_elbo(self.params)
+            updates, opt_state = optimizer.update(grad, opt_state)
+            self.params = optax.apply_updates(self.params, updates)
             self.costs[i] = cost
-            if ls in ['backtracking']:
-                self.ls_its[i] = self.opt.last_ls_it
-            self.ss[i] = self.opt.last_ls_ss
-            if self.opt.done:
-                if verbose:
-                    print("Optim exit with message "+self.opt.message+" after "+str(i)+" outer its.")
-                break
+
 
 # Oh this is actually Titsias'
 class HensmanGP(VSGP):

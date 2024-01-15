@@ -53,10 +53,7 @@ yy = (yy-mu_y) / (sig_y+1e-8)
 mod = HensmanGP(X, y, M=M, jit = jit, natural = False)
 fit_pre = mod.pred(X)
 pred_pre = mod.pred(XX)
-if ls in ['backtracking','lipschitz','armijo']:
-    mod.fit(verbose=verbose, ls=ls, iters=iters, debug = debug)
-elif ls=='fixed_lr':
-    mod.fit(verbose=verbose, ls=ls, iters=iters, debug = debug, ls_params = {'ss':1e-2})
+mod.fit(verbose=verbose, lr=5e-2, iters=iters, debug = debug)
 fit_post = mod.pred(X)
 pred_post = mod.pred(XX)
 

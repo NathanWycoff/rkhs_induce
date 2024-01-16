@@ -26,7 +26,8 @@ Ms = np.arange(40,360,40)
 reps = 2
 
 ## Optimization params
-lr = 1e-2
+#lr = 1e-2
+lr = 1e-3
 max_iters = 2000
 
 #get_D = lambda M: int(np.ceil(np.sqrt(M)))

@@ -21,24 +21,17 @@ rdf = df.groupby(['Method','M']).median()
 
 fig = plt.figure()
 
-plt.subplot(1,3,1)
+plt.subplot(1,2,1)
 plt.plot(rdf.loc['tit','MSE'], label = 'tit')
 plt.plot(rdf.loc['m2','MSE'], label = 'm2')
 plt.ylabel("logMSE")
 plt.legend()
 
-plt.subplot(1,3,2)
+plt.subplot(1,2,2)
 plt.plot(rdf.loc['tit','Time'], label = 'tit')
 plt.plot(rdf.loc['m2','Time'], label = 'm2')
 plt.ylabel("Time")
 plt.legend()
-
-plt.subplot(1,3,3)
-plt.plot(rdf.loc['tit','TPI'], label = 'tit')
-plt.plot(rdf.loc['m2','TPI'], label = 'm2')
-plt.ylabel("Time Per Iter")
-plt.legend()
-
 
 plt.tight_layout()
 plt.savefig("tit_marg.pdf")
@@ -51,14 +44,5 @@ plt.xlabel("logMSE")
 plt.ylabel("Time (s)")
 plt.legend()
 plt.savefig("tit_paretto.pdf")
-plt.close()
-
-fig = plt.figure()
-plt.scatter(rdf.loc['tit','MSE'], rdf.loc['tit','TPI'], label = 'tit')
-plt.scatter(rdf.loc['m2','MSE'], rdf.loc['m2','TPI'], label = 'm2')
-plt.xlabel("logMSE")
-plt.ylabel("TPI (s)")
-plt.legend()
-plt.savefig("tit_paretto_tpi.pdf")
 plt.close()
 

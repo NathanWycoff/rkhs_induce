@@ -32,12 +32,16 @@ class VSGP(object):
         sigma2_init = jnp.array(np.log(1.), dtype = npdtype) # Scale Parameter.
         #gamma2_init = jnp.array(np.log(1e-8), dtype = npdtype) # Error Variance.
         gamma2_init = jnp.array(np.log(1e-4), dtype = npdtype) # Error Variance.
+        #print("New gamma init")
+        #gamma2_init = jnp.array(np.log(1.), dtype = npdtype) # Error Variance.
+        #gamma2_init = jnp.array(np.log(10.), dtype = npdtype) # Error Variance.
         self.params = {'ell': ell_init, 'sigma2' : sigma2_init, 'gamma2' : gamma2_init}
         self.X = X
         self.y = y
         print("TODO: jit to 1e-8?")
         self.g_nug = 1e-6
         self.natural = natural
+        self.tracking = {}
 
         self.kernel = lambda x,y, ell, sigma2: sigma2*jnp.exp(-jnp.sum(jnp.square(x-y)/ell))
         self.get_K = lambda X1, X2, ell, sigma2: jax.vmap(lambda x: jax.vmap(lambda y: self.kernel(x, y, ell, sigma2))(X2))(X1)
@@ -45,6 +49,7 @@ class VSGP(object):
         self.jit = jit
         self.compile(jit)
 
+        #DRY3
         m_init = jnp.zeros(self.M, dtype = npdtype)
         S_init = jnp.eye(self.M, dtype = npdtype)
         if self.natural:
@@ -55,6 +60,7 @@ class VSGP(object):
         else:
             self.params['m'] = m_init
             self.params['S'] = S_init
+        #DRY3
 
 
     def get_Knm(self,params):
@@ -63,7 +69,7 @@ class VSGP(object):
     def get_Kmm(self,params):
         raise NotImplementedError()
 
-    def elbo_pre(self, params, X, y):
+    def elbo_pre_individ(self, params, X, y):
         mb_size = X.shape[0]
 
         ## PRECOMPUTING THINGS
@@ -113,6 +119,9 @@ class VSGP(object):
         KiSKi = Kmmi @ S @ Kmmi
         tr2 = mb_rescale * jnp.sum(Knm.T * (KiSKi @ Knm.T)) / gamma2
 
+        #if tr2>200:
+        #    import IPython; IPython.embed()
+
         ### KL via TFP
         if trust_tfp:
             dist_q = tfp.distributions.MultivariateNormalFullCovariance(loc=m, covariance_matrix=S)
@@ -125,10 +134,14 @@ class VSGP(object):
             print("Todo: think. Jit?")
             kl = jax.lax.cond(lam1<-1e-10, lambda: np.inf, lambda: kl)
 
-        loss = nll + tr1 + tr2 + kl
+        return nll, tr1, tr2, kl
+        #loss = nll + tr1 + tr2 + kl
         #loss = nll  + tr1 + kl
         #loss = nll + tr2
 
+    def elbo_pre(self, params, X, y):
+        a,b,c,d = self.elbo_pre_individ(params, X, y)
+        loss = a+b+c+d
         return loss
 
     def pred(self, XX):
@@ -157,36 +170,91 @@ class VSGP(object):
     def compile(self, jit):
         if jit:
             self.get_elbo = jax.jit(self.elbo_pre)
+            self.get_guys = jax.jit(self.elbo_pre_individ)
             self.grad_elbo = jax.jit(jax.grad(self.elbo_pre))
             self.vng_elbo = jax.jit(jax.value_and_grad(self.elbo_pre))
         else:
             print("not jitting!")
             self.get_elbo = self.elbo_pre
+            self.get_guys = self.elbo_pre_individ
             self.grad_elbo = jax.grad(self.elbo_pre)
             self.vng_elbo = jax.value_and_grad(self.elbo_pre)
 
-    def fit(self, iters = 100, lr = 5e-3, mb_size = 256, ls_params = {}, verbose = True, debug = False):
+    def fit(self, iters = 100, lr = 5e-3, mb_size = 256, ls_params = {}, verbose = True, debug = False, track = False):
         optimizer = optax.adam(lr)
         opt_state = optimizer.init(self.params)
 
         self.costs = np.nan*np.zeros(iters)
+        if track:
+            self.nll = np.nan*np.zeros(iters)
+            self.tr1 = np.nan*np.zeros(iters)
+            self.tr2 = np.nan*np.zeros(iters)
+            self.kl = np.nan*np.zeros(iters)
+        if track:
+            for v in self.params:
+                self.tracking[v] = np.zeros(self.params[v].flatten().shape+(iters,))
         for i in tqdm(range(iters), disable = not verbose):
-            if not self.jit:
-                print("not nec")
-                self.get_elbo(self.params)
-                print("not nec")
             batch = np.random.choice(self.N,mb_size,replace=False)
             cost, grad = self.vng_elbo(self.params, X[batch,:], y[batch])
             updates, opt_state = optimizer.update(grad, opt_state)
             self.params = optax.apply_updates(self.params, updates)
             self.costs[i] = cost
+            if track:
+                for v in self.params:
+                    self.tracking[v][:,i] = jnp.copy(self.params[v].flatten())
+                print("unnecessary eval!")
+                nll, tr1, tr2, kl =  self.get_guys(self.params, X, y)
+                self.nll[i] = nll
+                self.tr1[i] = tr1
+                self.tr2[i] = tr2
+                self.kl[i] = kl
+
+    def plot(self, fname = 'track.png'):
+        if len(self.tracking)==0:
+            print("Skipping plotting of empty tracking")
+        else:
+            nparams = len(self.tracking)
+            ncols = 2
+            nrows = int(np.ceil(nparams/ncols))
+
+            fig = plt.figure()
+            for vi,v in enumerate(self.params):
+                plt.subplot(nrows,ncols,vi+1)
+                #plt.plot(self.tracking[v].T)
+                plt.plot(self.tracking[v][:25,:].T)
+                plt.title(v)
+            plt.tight_layout()
+            plt.savefig(fname)
+            plt.close()
+
+
 
 
 class HensmanGP(VSGP):
     def __init__(self, X, y, M = 10, jit = True, natural = True):
+        print("new m/Z init.")
         VSGP.__init__(self, X, y, M, jit, natural)
-        Z_init = jnp.array(np.random.uniform(size=[self.M,self.P]))
+        #Z_init = jnp.array(np.random.uniform(size=[self.M,self.P]))
+        init_samp = np.random.choice(self.N,self.M,replace=self.N<self.M)
+        Z_init = jnp.array(self.X[init_samp,:])
+        #Z_init = jnp.array(np.random.uniform(size=[self.M,self.P]))
+
+        #DRY3
+        #m_init = jnp.zeros(self.M, dtype = npdtype)
+        m_init = jnp.array(self.y[init_samp])
+        S_init = jnp.eye(self.M, dtype = npdtype)
+        if self.natural:
+            theta1_init = jnp.linalg.solve(S_init, m_init)
+            theta2_init = -jnp.linalg.inv(S_init)/2
+            self.params['theta1'] = theta1_init
+            self.params['theta2'] = theta2_init
+        else:
+            self.params['m'] = m_init
+            self.params['S'] = S_init
+        #DRY3
+
         self.params['Z'] = Z_init
+
         self.meth_name = 'Hensman_et_al'
 
     def get_Knm(self,X,params):
@@ -211,10 +279,28 @@ class M2GP(VSGP):
         #A_init = jnp.array(np.eye(self.D)[np.random.choice(self.D,self.M,replace=False),:]) 
         #A_init = jnp.array(jnp.ones([self.M,D])) 
         A_init = jnp.array(jnp.ones([self.M,D])) / D
-        Z_init = jnp.array(np.random.uniform(size=[self.M,self.D,self.P]))
+
+        #Z_init = jnp.array(np.random.uniform(size=[self.M,self.D,self.P]))
+        init_samps = [np.random.choice(self.N,self.D,replace=self.N<self.D) for _ in range(self.M)]
+        Z_init = jnp.stack([jnp.array(self.X[init_samp,:]) for init_samp in init_samps], axis = 0)
+
         self.params['A'] = A_init
         self.params['Z'] = Z_init
         self.meth_name = 'M2GP'
+
+        #DRY3
+        #m_init = jnp.zeros(self.M, dtype = npdtype)
+        m_init = jnp.array([np.mean(self.y[init_samp]) for init_samp in init_samps])
+        S_init = jnp.eye(self.M, dtype = npdtype)
+        if self.natural:
+            theta1_init = jnp.linalg.solve(S_init, m_init)
+            theta2_init = -jnp.linalg.inv(S_init)/2
+            self.params['theta1'] = theta1_init
+            self.params['theta2'] = theta2_init
+        else:
+            self.params['m'] = m_init
+            self.params['S'] = S_init
+        #DRY3
 
     def get_Knm(self,X,params):
         ell = jnp.exp(params['ell'])

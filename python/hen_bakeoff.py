@@ -2,6 +2,8 @@
 # -*- coding: utf-8 -*-
 #  vax_vigp_bakeoff.py Author "Nathan Wycoff <nathanbrwycoff@gmail.com>" Date 12.24.2023
 
+# was 45 iters a second
+
 import numpy as np
 import jax.numpy as jnp
 import jax
@@ -36,9 +38,9 @@ if manual:
     #max_iters = 2000
     #max_iters = 6000
     #max_iters = 5000 # 0.109 0.074
-    max_iters = 10000 #Errors are 0.084 and 0.041
+    #max_iters = 10000 #Errors are 0.084 and 0.041
     #max_iters = 15000 # Errors are 0.085 and 0.053
-    #max_iters = 30000 # Errors are 0.103 and 0.089
+    max_iters = 30000 # Errors are 0.103 and 0.089
     lr = 1e-3
     #seed = 0
     seed = 5
@@ -97,9 +99,15 @@ tt = time()
 mod = HensmanGP(X, y, M, jit = jit)
 mod.fit(verbose=verbose, lr=lr, iters=max_iters, debug = debug, mb_size = mb_size, track=track)
 td = time()-tt
+tpi = td / mod.last_it
 
 yy_hat = mod.pred(XX)
 mse = jnp.mean(jnp.square(yy_hat-yy))
+
+fig = plt.figure()
+plt.plot(mod.mse_es)
+plt.savefig("es.png")
+plt.close()
 
 #print(mse)
 #
@@ -140,6 +148,7 @@ tt = time()
 mod2 = M2GP(X, y, M,D=D, jit = jit)
 mod2.fit(verbose=verbose, lr=lr, iters=max_iters, debug = debug, mb_size = mb_size)
 td2 = time()-tt
+tpi2 = td2 / mod2.last_it
 
 yy_hat_2 = mod2.pred(XX)
 mse2 = jnp.mean(jnp.square(yy_hat_2-yy))
@@ -165,7 +174,7 @@ if manual:
     print(mse2)
 
 else:
-    df = pd.DataFrame([['tit',mse, td, M, seed], ['m2',mse2, td2, M, seed]])
-    df.columns = ['Method','MSE','Time', 'M', 'seed']
+    df = pd.DataFrame([['hen',mse, td, tpi, M, seed], ['m2',mse2, td2, tpi, M, seed]])
+    df.columns = ['Method','MSE','Time', 'TPI', 'M', 'seed']
     df.to_csv(simdir+'/'+sim_id+'.csv')
 

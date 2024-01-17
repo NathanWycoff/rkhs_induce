@@ -13,6 +13,7 @@ from jax import config
 from tqdm import tqdm
 import warnings
 import optax
+from scipy.spatial import distance_matrix
 
 PRECISION = '64'
 
@@ -23,7 +24,9 @@ else:
     npdtype = np.float32
 
 class VSGP(object):
-    def __init__(self, X, y, M = 10, jit = True, natural = True, N_es = 512):
+    #def __init__(self, X, y, M = 10, jit = True, natural = True, N_es = 512):
+    def __init__(self, X, y, M = 10, jit = True, natural = True, N_es = 1024):
+        print("Bigger ES size.")
         self.meth_name = 'Variational Stochastic GP.'
 
         # Split off a chunk of data for early stopping.
@@ -41,11 +44,13 @@ class VSGP(object):
         self.y_es = y_es
         self.N = self.X.shape[0]
 
-        self.es_patience = 25 # Patience in epochs.
-        #self.es_patience = 10 # Patience in epochs.
+        self.es_patience = 25 # Patience in epochs. #0.066 0.047
+        #self.es_patience = 50 # Patience in epochs. #0.061 0.057
+        #self.es_patience = 10 # Patience in epochs. 0.09 0.12
 
         self.M = M
         ell_init = jnp.repeat(jnp.array(np.log(1e-1), dtype = npdtype),P)
+        #ell_init = jnp.repeat(jnp.array(np.log(1e-4), dtype = npdtype),P)
         # COVAR =  sigma2*K + (gamma2+g_nug)*I
         sigma2_init = jnp.array(np.log(1.), dtype = npdtype) # Scale Parameter.
         gamma2_init = jnp.array(np.log(1e-4), dtype = npdtype) # Error Variance.
@@ -203,7 +208,7 @@ class VSGP(object):
                 self.tracking[v] = np.zeros(self.params[v].flatten().shape+(iters,))
         for i in tqdm(range(iters), disable = not verbose):
             batch = np.random.choice(self.N,mb_size,replace=False)
-            cost, grad = self.vng_elbo(self.params, X[batch,:], y[batch])
+            cost, grad = self.vng_elbo(self.params, self.X[batch,:], self.y[batch])
             updates, opt_state = optimizer.update(grad, opt_state)
             self.params = optax.apply_updates(self.params, updates)
             self.costs[i] = cost
@@ -222,7 +227,7 @@ class VSGP(object):
                 for v in self.params:
                     self.tracking[v][:,i] = jnp.copy(self.params[v].flatten())
                 print("unnecessary eval!")
-                nll, tr1, tr2, kl =  self.get_guys(self.params, X, y)
+                nll, tr1, tr2, kl =  self.get_guys(self.params, self.X, self.y)
                 self.nll[i] = nll
                 self.tr1[i] = tr1
                 self.tr2[i] = tr2

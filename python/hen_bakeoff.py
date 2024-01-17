@@ -19,9 +19,6 @@ import sys
 import pandas as pd
 import pickle
 
-for i in range(10):
-    print("Early stopping?")
-
 config.update("jax_enable_x64", True)
 
 exec(open("python/jax_vsgp_lib.py").read())
@@ -34,16 +31,14 @@ if manual:
     for i in range(10):
         print("manual!")
     #M = 10
-    M = 120
-    #max_iters = 2000
-    #max_iters = 6000
-    #max_iters = 5000 # 0.109 0.074
-    #max_iters = 10000 #Errors are 0.084 and 0.041
-    #max_iters = 15000 # Errors are 0.085 and 0.053
-    max_iters = 30000 # Errors are 0.103 and 0.089
-    lr = 1e-3
-    #seed = 0
-    seed = 5
+    #M = 120
+    #M = 320
+    #M = 500
+    M = 128
+    max_iters = 30000 
+    #lr = 1e-3
+    seed = 0
+    #seed = 5
     debug = True
     jit = True
     track = False
@@ -52,6 +47,7 @@ else:
     seed = int(sys.argv[2])
     debug = False
     jit = True
+    track = False
 
 sim_id = str(M)+'_'+str(seed)
 
@@ -85,10 +81,23 @@ sig_y = np.std(y)
 y = (y-mu_y) / sig_y
 yy = (yy-mu_y) / sig_y
 
+## Next thing to try: no scaling of X.
 min_X = np.min(X, axis = 0)
 max_X = np.max(X, axis = 0)
 X = (X-min_X[np.newaxis,:]) / (max_X-min_X)[np.newaxis,:]
 XX = (XX-min_X[np.newaxis,:]) / (max_X-min_X)[np.newaxis,:]
+
+#if manual:
+#    import xgboost as xgb
+#    dtrain = xgb.DMatrix(X, label=y)
+#    dtest = xgb.DMatrix(XX, label=yy)
+#    param = {'max_depth': 100, 'eta': 1, 'objective': 'reg:squarederror'}
+#    param['nthread'] = 4
+#    num_round = 100
+#    evallist = [(dtrain, 'train'), (dtest, 'eval')]
+#    bst = xgb.train(param, dtrain, num_round, evallist)
+#    pred = bst.predict(dtest)
+#    np.mean(np.square(yy-pred))
 
 ## Run a short one to compile things
 mod = HensmanGP(X, y, M, jit = jit)
@@ -153,6 +162,17 @@ tpi2 = td2 / mod2.last_it
 yy_hat_2 = mod2.pred(XX)
 mse2 = jnp.mean(jnp.square(yy_hat_2-yy))
 
+es_pred = mod2.pred(mod2.X_es)
+jnp.mean(jnp.square(es_pred-mod2.y_es))
+
+a = mod2.mse_es
+a = a[~np.isnan(a)]
+fig = plt.figure()
+plt.plot(mod2.mse_es)
+plt.savefig("es2.png")
+plt.close()
+
+
 ## For debugging, show optimization cost.
 fname = 'temp.png' if manual else figsdir+"/"+sim_id+".png"
 fig = plt.figure()
@@ -173,8 +193,10 @@ if manual:
     print(mse)
     print(mse2)
 
+
 else:
-    df = pd.DataFrame([['hen',mse, td, tpi, M, seed], ['m2',mse2, td2, tpi, M, seed]])
+    df = pd.DataFrame([['hen',mse, td, tpi, M, seed], ['m2',mse2, td2, tpi2, M, seed]])
     df.columns = ['Method','MSE','Time', 'TPI', 'M', 'seed']
     df.to_csv(simdir+'/'+sim_id+'.csv')
+
 

@@ -25,13 +25,16 @@ exec(open("python/sim_settings.py").read())
 np.random.seed(123)
 
 debug = True
-max_iters = 2000
+max_iters = 100
+#max_iters = 10000
 #lr = 1e-4
-lr = 1e-3
+#lr = 1e-3
+lr = 5e-3
 
 M = 50
 P = 1
-N = 2000
+#N = 2000
+N = 10000
 NN = 500
 
 X = np.random.uniform(size=[N,P])
@@ -39,8 +42,8 @@ XX = np.random.uniform(size=[NN,P])
 y = np.cos(4*np.pi*np.sum(X, axis = 1))
 yy = np.cos(4*np.pi*np.sum(XX, axis = 1))
 
-#mod = FFGP(X, y, M=M)
-mod = M2GP(X, y, M=M)
+mod = FFGP(X, y, M=M, es_patience = 100000)
+#mod = M2GP(X, y, M=M)
 pred_pre = mod.pred(XX)
 mod.fit(verbose=verbose, lr=lr, iters=max_iters, debug = debug, mb_size = mb_size)
 pred_post = mod.pred(XX)

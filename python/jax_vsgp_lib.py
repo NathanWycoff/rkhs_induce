@@ -254,8 +254,8 @@ class VSGP(object):
             plt.close()
 
 class HensmanGP(VSGP):
-    def __init__(self, X, y, M = 10, jit = True, natural = True):
-        VSGP.__init__(self, X, y, M, jit, natural)
+    def __init__(self, X, y, M = 10, jit = True, natural = True, N_es = 1024, es_patience = 25):
+        VSGP.__init__(self, X, y, M, jit, natural, N_es, es_patience)
 
         init_samp = np.random.choice(self.N,self.M,replace=self.N<self.M)
         Z_init = jnp.array(self.X[init_samp,:])
@@ -293,8 +293,8 @@ class HensmanGP(VSGP):
 
 # Method 2 Arbitrary RKHS Inducing functions
 class M2GP(VSGP):
-    def __init__(self, X, y, M = 10, D = 5, jit = True, natural = True):
-        VSGP.__init__(self, X, y, M, jit, natural)
+    def __init__(self, X, y, M = 10, D = 5, jit = True, natural = True, N_es = 1024, es_patience = 25):
+        VSGP.__init__(self, X, y, M, jit, natural, N_es, es_patience)
         self.D = D
         A_init = jnp.array(jnp.ones([self.M,D])) / D
 
@@ -359,25 +359,40 @@ class M2GP(VSGP):
         return Kzz
 
 class FFGP(VSGP):
-    def __init__(self, X, y, M = 10, jit = True, natural = True):
-        VSGP.__init__(self, X, y, M, jit, natural)
+    def __init__(self, X, y, M = 10, jit = True, natural = True, N_es = 1024, es_patience = 25):
+        VSGP.__init__(self, X, y, M, jit, natural, N_es, es_patience)
 
         omega0_init = np.random.uniform(0,2*np.pi,size=M)
         ell_them = jnp.exp(self.params['ell']/2)/2
-        #omega_init = np.random.normal(size=[M,self.P], scale = 1/ell_them[np.newaxis,:])
-        print("Mechanic's omega init")
-        omega_init = np.random.normal(size=[M,self.P], scale = 0.01)
+        omega_init = np.random.normal(size=[M,self.P], scale = 1/ell_them[np.newaxis,:])
+        #print("Mechanic's omega init")
+        #omega_init = np.random.normal(size=[M,self.P], scale = 0.01)
         self.params['omega0'] = jnp.array(omega0_init, dtype = npdtype)
         self.params['omega'] = omega_init
 
-        #c_init = jnp.log(jnp.ones(self.P, dtype = npdtype))
-        c_init = jnp.array(jnp.log(np.abs(np.random.normal(size=self.P))), dtype = npdtype)
-        print(" Mechanic's C init ")
+        c_init = jnp.log(jnp.ones(self.P, dtype = npdtype))
+        #print(" Mechanic's C init ")
+        #c_init = jnp.array(jnp.log(np.abs(np.random.normal(size=self.P))), dtype = npdtype)
         self.params['c'] = c_init
 
         #DRY3
         print("Zero init for variational param may be improved upon.")
-        # Maybe a nadayara-watson type initializaton? Or just see what other authors do...
+        ## Maybe a nadayara-watson type initializaton? Or just see what other authors do...
+        #print("NW Estimate")
+        #Knm = self.get_Knm(self.X, self.params)
+        ##Knm = Knm * (Knm>0)
+        #Knm = jnp.exp(Knm)
+        #Knm = Knm / (np.sum(Knm, axis = 0)[jnp.newaxis,:]+1e-8)
+        #m_init = Knm.T @ self.y
+        #print("NW Estimate")
+
+        #print("cond init")
+        #m_init = jnp.zeros(self.M, dtype = npdtype)
+        #Knn = self.get_K(self.X, self.X, jnp.exp(self.params['ell']), jnp.exp(self.params['sigma2']))
+        #Knm = self.get_Knm(self.X, self.params)
+        #m_init = Knm.T @ np.linalg.solve(Knn+self.g_nug, self.y)
+        #print("cond init")
+
         m_init = jnp.zeros(self.M, dtype = npdtype)
         #m_init = jnp.array(self.y[init_samp])
         S_init = jnp.eye(self.M, dtype = npdtype)
@@ -402,7 +417,7 @@ class FFGP(VSGP):
                 / (jnp.square(c)+jnp.square(ell_them))[jnp.newaxis,:]
         t2 = jnp.cos(omega0 + jnp.sum(t2i, axis = 1))
 
-        t3 = jnp.sqrt(jnp.prod(jnp.square(ell_them)/(jnp.square(c)+jnp.square(ell_them))))
+        t3 = jnp.prod(jnp.sqrt(jnp.square(ell_them)/(jnp.square(c)+jnp.square(ell_them))))
 
         return t1*t2*t3
     
@@ -434,10 +449,10 @@ class FFGP(VSGP):
         t2i = c4 * jnp.square(omega1-omega2) / denom
         t2 = jnp.exp(-jnp.sum(t2i))*jnp.cos(omega01-omega02)
 
-        t3i = c4*jnp.square(omega1-omega2) / denom
+        t3i = c4*jnp.square(omega1+omega2) / denom
         t3 = jnp.exp(-jnp.sum(t3i))*jnp.cos(omega01+omega02)
 
-        t4 = jnp.sqrt(jnp.prod(jnp.square(ell_them)/(2*jnp.square(c)+jnp.square(ell_them))))
+        t4 = jnp.prod(jnp.sqrt(jnp.square(ell_them)/(2*jnp.square(c)+jnp.square(ell_them))))
 
         return t1*(t2+t3)*t4
 

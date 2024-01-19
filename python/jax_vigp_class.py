@@ -490,4 +490,3 @@ class M2GP(VIGP):
         Kzz = jnp.einsum('ik,ijkl,jl->ij', A, K_big, A)
 
         return Kzz
-

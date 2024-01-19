@@ -25,7 +25,7 @@ else:
 
 class VSGP(object):
     #def __init__(self, X, y, M = 10, jit = True, natural = True, N_es = 512):
-    def __init__(self, X, y, M = 10, jit = True, natural = True, N_es = 1024):
+    def __init__(self, X, y, M = 10, jit = True, natural = True, N_es = 1024, es_patience = 25):
         print("Bigger ES size.")
         self.meth_name = 'Variational Stochastic GP.'
 
@@ -44,7 +44,7 @@ class VSGP(object):
         self.y_es = y_es
         self.N = self.X.shape[0]
 
-        self.es_patience = 25 # Patience in epochs. #0.066 0.047
+        self.es_patience = es_patience # Patience in epochs. #0.066 0.047
         #self.es_patience = 50 # Patience in epochs. #0.061 0.057
         #self.es_patience = 10 # Patience in epochs. 0.09 0.12
 
@@ -255,11 +255,11 @@ class VSGP(object):
 
 class HensmanGP(VSGP):
     def __init__(self, X, y, M = 10, jit = True, natural = True):
-        print("new m/Z init.")
         VSGP.__init__(self, X, y, M, jit, natural)
 
         init_samp = np.random.choice(self.N,self.M,replace=self.N<self.M)
         Z_init = jnp.array(self.X[init_samp,:])
+        self.params['Z'] = Z_init
 
         #DRY3
         #m_init = jnp.zeros(self.M, dtype = npdtype)
@@ -275,7 +275,6 @@ class HensmanGP(VSGP):
             self.params['S'] = S_init
         #DRY3
 
-        self.params['Z'] = Z_init
 
         self.meth_name = 'Hensman_et_al'
 
@@ -358,4 +357,104 @@ class M2GP(VSGP):
         Kzz = jnp.einsum('ik,ijkl,jl->ij', A, K_big, A)
 
         return Kzz
+
+class FFGP(VSGP):
+    def __init__(self, X, y, M = 10, jit = True, natural = True):
+        VSGP.__init__(self, X, y, M, jit, natural)
+
+        omega0_init = np.random.uniform(0,2*np.pi,size=M)
+        ell_them = jnp.exp(self.params['ell']/2)/2
+        #omega_init = np.random.normal(size=[M,self.P], scale = 1/ell_them[np.newaxis,:])
+        print("Mechanic's omega init")
+        omega_init = np.random.normal(size=[M,self.P], scale = 0.01)
+        self.params['omega0'] = jnp.array(omega0_init, dtype = npdtype)
+        self.params['omega'] = omega_init
+
+        #c_init = jnp.log(jnp.ones(self.P, dtype = npdtype))
+        c_init = jnp.array(jnp.log(np.abs(np.random.normal(size=self.P))), dtype = npdtype)
+        print(" Mechanic's C init ")
+        self.params['c'] = c_init
+
+        #DRY3
+        print("Zero init for variational param may be improved upon.")
+        # Maybe a nadayara-watson type initializaton? Or just see what other authors do...
+        m_init = jnp.zeros(self.M, dtype = npdtype)
+        #m_init = jnp.array(self.y[init_samp])
+        S_init = jnp.eye(self.M, dtype = npdtype)
+        if self.natural:
+            theta1_init = jnp.linalg.solve(S_init, m_init)
+            theta2_init = -jnp.linalg.inv(S_init)/2
+            self.params['theta1'] = theta1_init
+            self.params['theta2'] = theta2_init
+        else:
+            self.params['m'] = m_init
+            self.params['S'] = S_init
+        #DRY3
+
+        self.meth_name = 'Hensman_et_al'
+
+    def getknm(self,x, omega0, omega, ell_them, c):
+        t1i = (jnp.square(x)[jnp.newaxis,:] + jnp.square(omega) * jnp.square(c)[jnp.newaxis,:]) \
+                / (2*(jnp.square(c)+jnp.square(ell_them)))[jnp.newaxis,:]
+        t1 = jnp.exp(-jnp.sum(t1i, axis = 1))
+
+        t2i = jnp.square(c)[jnp.newaxis,:]*omega*x[jnp.newaxis,:] \
+                / (jnp.square(c)+jnp.square(ell_them))[jnp.newaxis,:]
+        t2 = jnp.cos(omega0 + jnp.sum(t2i, axis = 1))
+
+        t3 = jnp.sqrt(jnp.prod(jnp.square(ell_them)/(jnp.square(c)+jnp.square(ell_them))))
+
+        return t1*t2*t3
+    
+    def get_Knm(self,X,params):
+        #ell = jnp.exp(params['ell'])
+        ell_them = jnp.exp(params['ell']/2)/2
+        c = jnp.exp(params['c'])
+        sigma2 = jnp.exp(params['sigma2'])
+        omega0 = params['omega0']
+        omega = params['omega']
+
+        Knm = jax.vmap(lambda x: self.getknm(x, omega0, omega, ell_them, c))(X)
+        #self.getknm(X[0,:],omega0,omega,ell_them,c)
+
+        return Knm
+
+    def getkmm(self, omega1, omega2, ell_them, c):
+        omega01 = omega1[0]
+        omega1 = omega1[1:]
+        omega02 = omega2[0]
+        omega2 = omega2[1:]
+
+        denom = (2*(2*jnp.square(c)+jnp.square(ell_them)))
+        c4 = jnp.power(c,4)
+
+        t1i = jnp.square(c)[jnp.newaxis,:]*(jnp.square(omega1)+jnp.square(omega2)) / denom
+        t1 = jnp.exp(-jnp.sum(t1i))
+
+        t2i = c4 * jnp.square(omega1-omega2) / denom
+        t2 = jnp.exp(-jnp.sum(t2i))*jnp.cos(omega01-omega02)
+
+        t3i = c4*jnp.square(omega1-omega2) / denom
+        t3 = jnp.exp(-jnp.sum(t3i))*jnp.cos(omega01+omega02)
+
+        t4 = jnp.sqrt(jnp.prod(jnp.square(ell_them)/(2*jnp.square(c)+jnp.square(ell_them))))
+
+        return t1*(t2+t3)*t4
+
+
+    def get_Kmm(self,params):
+        #ell = jnp.exp(params['ell'])
+        ell_them = jnp.exp(params['ell']/2)/2
+        c = jnp.exp(params['c'])
+        sigma2 = jnp.exp(params['sigma2'])
+        omega0 = params['omega0']
+        omega = params['omega']
+
+        Oa = jnp.concatenate([omega0[:,jnp.newaxis], omega], axis = 1)
+
+        Kmm = jax.vmap(lambda x: jax.vmap(lambda y: self.getkmm(x, y, ell_them, c))(Oa))(Oa)
+
+        return Kmm
+
+
 

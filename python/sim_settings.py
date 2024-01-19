@@ -15,10 +15,13 @@ overfigsdir = './figsout/'
 figsdir = overfigsdir+problem+'/'
 datdir = 'pickles'
 
-Ms = np.arange(40,321,40)
+#Ms = np.arange(40,321,40)
+Ms = np.arange(40,201,20)
 #reps = 30
 #reps = 2
-reps = 8
+reps = 5
+#reps = 8
+#reps = 15
 
 ## Optimization params
 #lr = 1e-2

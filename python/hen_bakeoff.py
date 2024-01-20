@@ -30,13 +30,13 @@ manual = True
 if manual:
     for i in range(10):
         print("manual!")
-    #M = 10
-    #M = 120
-    #M = 320
-    #M = 500
+    #M = 1000 #0.18213301
+    #M = 600 # 0.24
+    #M = 320 # 0.34
+    #M = 128  # 0.4
     M = 128
-    #max_iters = 30000 
-    max_iters = 2000
+    max_iters = 30000 
+    #max_iters = 2000
     #lr = 1e-3
     seed = 0
     #seed = 5
@@ -103,9 +103,10 @@ for method in methods:
     if method=='hens':
         mod = HensmanGP(X, y, M, jit = jit)
     elif method=='four':
-        mod = FFGP(X, y, M, jit = jit, es_patience = 10000)
+        #mod = FFGP(X, y, M, jit = jit, es_patience = 10000)
+        #print("Biggest boi")
+        mod = FFGP(X, y, M, jit = jit)
         Knm = mod.get_Knm(X, mod.params)
-        print("Biggest boi")
         print(np.max(np.abs(Knm)))
     elif method=='m2':
         mod = M2GP(X, y, M, D=D, jit = jit)

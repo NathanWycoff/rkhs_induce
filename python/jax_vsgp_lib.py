@@ -364,6 +364,8 @@ class FFGP(VSGP):
 
 
         # Initialization as in Lazaro-Gredilla et al
+        # Their init:
+        #ell_them = 0.5*jnp.ones(self.P, dtype = npdtype)
         ## This heuristic seemed OK
         ell_them = jnp.ones(self.P, dtype = npdtype)
         ell_us = 2*jnp.log(2*ell_them)
@@ -376,7 +378,10 @@ class FFGP(VSGP):
         self.params['omega0'] = jnp.array(omega0_init, dtype = npdtype)
         self.params['omega'] = omega_init
 
+        # Their init:
+        #c_init = jnp.log(jnp.array(np.std(self.X, axis = 0), dtype = npdtype))
         c_init = jnp.log(jnp.ones(self.P, dtype = npdtype))
+
         #print(" Mechanic's C init ")
         #c_init = jnp.array(jnp.log(np.abs(np.random.normal(size=self.P))), dtype = npdtype)
         self.params['c'] = c_init

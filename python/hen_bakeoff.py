@@ -24,8 +24,8 @@ config.update("jax_enable_x64", True)
 exec(open("python/jax_vsgp_lib.py").read())
 exec(open("python/sim_settings.py").read())
 
-manual = False
-#manual = True
+#manual = False
+manual = True
 
 if manual:
     for i in range(10):
@@ -36,13 +36,14 @@ if manual:
     #M = 500
     M = 128
     #max_iters = 30000 
-    max_iters = 20
+    max_iters = 2000
     #lr = 1e-3
     seed = 0
     #seed = 5
     debug = True
     jit = True
     track = False
+    methods = ['four']
 else:
     M = int(sys.argv[1])
     seed = int(sys.argv[2])
@@ -88,6 +89,7 @@ max_X = np.max(X, axis = 0)
 X = (X-min_X[np.newaxis,:]) / (max_X-min_X)[np.newaxis,:]
 XX = (XX-min_X[np.newaxis,:]) / (max_X-min_X)[np.newaxis,:]
 
+## Run a small model to compile stuff before anything is timed.
 mod = HensmanGP(X, y, M, jit = jit)
 mod.fit(verbose=verbose, lr=lr, iters=20, debug = debug, mb_size = mb_size, track = track)
 
@@ -95,12 +97,16 @@ mses = []
 tds = []
 tpis = []
 costs = []
+mse_ess = []
 for method in methods:
     tt = time()
     if method=='hens':
         mod = HensmanGP(X, y, M, jit = jit)
     elif method=='four':
         mod = FFGP(X, y, M, jit = jit, es_patience = 10000)
+        Knm = mod.get_Knm(X, mod.params)
+        print("Biggest boi")
+        print(np.max(np.abs(Knm)))
     elif method=='m2':
         mod = M2GP(X, y, M, D=D, jit = jit)
     else:
@@ -118,7 +124,9 @@ for method in methods:
     tpis.append(tpi)
 
     costs.append(mod.costs)
-    del mod
+    mse_ess.append(mod.mse_es)
+    if not manual:
+        del mod
 
 ## For debugging, show optimization cost.
 fname = 'temp.png' if manual else figsdir+"/"+sim_id+".png"
@@ -127,6 +135,9 @@ for mi,method in enumerate(methods):
     plt.subplot(1,len(methods),1+mi)
     plt.plot(costs[mi])
     plt.title(method)
+    ax = plt.gca()
+    ax1 = ax.twinx()
+    ax1.plot(100*np.arange(len(mse_ess[mi])),mse_ess[mi], color = 'green')
 plt.tight_layout()
 plt.savefig(fname)
 plt.close()

@@ -362,8 +362,14 @@ class FFGP(VSGP):
     def __init__(self, X, y, M = 10, jit = True, natural = True, N_es = 1024, es_patience = 25):
         VSGP.__init__(self, X, y, M, jit, natural, N_es, es_patience)
 
+
+        # Initialization as in Lazaro-Gredilla et al
+        ## This heuristic seemed OK
+        ell_them = jnp.ones(self.P, dtype = npdtype)
+        ell_us = 2*jnp.log(2*ell_them)
+        self.params['ell'] = ell_us
+
         omega0_init = np.random.uniform(0,2*np.pi,size=M)
-        ell_them = jnp.exp(self.params['ell']/2)/2
         omega_init = np.random.normal(size=[M,self.P], scale = 1/ell_them[np.newaxis,:])
         #print("Mechanic's omega init")
         #omega_init = np.random.normal(size=[M,self.P], scale = 0.01)
@@ -375,8 +381,8 @@ class FFGP(VSGP):
         #c_init = jnp.array(jnp.log(np.abs(np.random.normal(size=self.P))), dtype = npdtype)
         self.params['c'] = c_init
 
-        #DRY3
-        print("Zero init for variational param may be improved upon.")
+        ##DRY3
+        #print("Zero init for variational param may be improved upon.")
         ## Maybe a nadayara-watson type initializaton? Or just see what other authors do...
         #print("NW Estimate")
         #Knm = self.get_Knm(self.X, self.params)
@@ -393,7 +399,8 @@ class FFGP(VSGP):
         #m_init = Knm.T @ np.linalg.solve(Knn+self.g_nug, self.y)
         #print("cond init")
 
-        m_init = jnp.zeros(self.M, dtype = npdtype)
+        #m_init = jnp.zeros(self.M, dtype = npdtype)
+        m_init = jnp.array(np.random.normal(scale=1e-2,size=self.M), dtype = npdtype)
         #m_init = jnp.array(self.y[init_samp])
         S_init = jnp.eye(self.M, dtype = npdtype)
         if self.natural:
@@ -455,7 +462,6 @@ class FFGP(VSGP):
         t4 = jnp.prod(jnp.sqrt(jnp.square(ell_them)/(2*jnp.square(c)+jnp.square(ell_them))))
 
         return t1*(t2+t3)*t4
-
 
     def get_Kmm(self,params):
         #ell = jnp.exp(params['ell'])

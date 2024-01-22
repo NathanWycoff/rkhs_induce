@@ -404,8 +404,8 @@ class FFGP(VSGP):
         #m_init = Knm.T @ np.linalg.solve(Knn+self.g_nug, self.y)
         #print("cond init")
 
-        #m_init = jnp.zeros(self.M, dtype = npdtype)
-        m_init = jnp.array(np.random.normal(scale=1e-2,size=self.M), dtype = npdtype)
+        m_init = jnp.zeros(self.M, dtype = npdtype)
+        #m_init = jnp.array(np.random.normal(scale=1e-2,size=self.M), dtype = npdtype)
         #m_init = jnp.array(self.y[init_samp])
         S_init = jnp.eye(self.M, dtype = npdtype)
         if self.natural:

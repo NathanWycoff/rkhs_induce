@@ -4,7 +4,8 @@
 
 import numpy as np
 
-test = True
+#test = True
+test = False
 
 #problem = 'syn_sine'
 problem = 'kin40k'
@@ -36,6 +37,7 @@ if test:
     reps = 2
     #max_iters = 100
 
-methods = ['hens','four','m2']
+methods = ['hens','m2']
+#methods = ['hens','four','m2']
 
 colors = {'hens':'blue','four':'green','m2':'orange'}

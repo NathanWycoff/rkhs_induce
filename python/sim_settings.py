@@ -8,7 +8,9 @@ import numpy as np
 test = False
 
 #problem = 'syn_sine'
-problem = 'kin40k'
+#problem = 'kin40k'
+#problem = 'year'
+problem = 'keggu'
 
 oversimdir = './simout/'
 simdir = oversimdir+problem+'/'
@@ -30,7 +32,6 @@ verbose = True
 #get_D = lambda M: int(np.ceil(np.sqrt(M)))
 get_D = lambda M: 5
 #get_D = lambda M: 2
-
 
 if test:
     Ms = np.arange(6,10,2)

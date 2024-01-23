@@ -24,31 +24,18 @@ config.update("jax_enable_x64", True)
 exec(open("python/jax_vsgp_lib.py").read())
 exec(open("python/sim_settings.py").read())
 
-#manual = False
-manual = True
+manual = False
+#manual = True
 
 if manual:
     for i in range(10):
         print("manual!")
-    #M = 1000 #0.18213301
-    #M = 600 # 0.24
-    #M = 320 # 0.34
-    #M = 128  # 0.4
     M = 128
-    max_iters = 30000 
-    #max_iters = 300
-    #mb_size = 1024
-    mb_size = 256
-    #mb_size = 5000
-    #max_iters = 2000
-    #lr = 1e-3
     seed = 0
     #seed = 5
     debug = True
     jit = True
     track = False
-    #methods = ['four']
-    methods = ['hens','m2']
 else:
     M = int(sys.argv[1])
     seed = int(sys.argv[2])

@@ -44,6 +44,9 @@ class VSGP(object):
         self.y_es = y_es
         self.N = self.X.shape[0]
 
+
+        self.pred_mb_size = 1024
+
         #self.es_patience = es_patience*self.N # Patience in epochs. #0.066 0.047
         if es_patience is None:
             #es_patience = 224400
@@ -159,7 +162,7 @@ class VSGP(object):
         loss = a+b+c+d
         return loss
 
-    def pred(self, XX):
+    def _pred(self, XX):
         gI = self.g_nug*jnp.eye(self.M, dtype=npdtype)
         # DRY1
         if self.natural:
@@ -180,6 +183,16 @@ class VSGP(object):
 
         return ret
 
+    def pred(self, XX):
+        mbs = int(np.ceil(XX.shape[0]/self.pred_mb_size))
+        preds_all = np.zeros(XX.shape[0])
+        for mb in range(mbs):
+            ind1 = (mb*self.pred_mb_size)
+            ind2 = ((mb+1)*self.pred_mb_size)
+            XXmb = XX[ind1:ind2,:]
+            preds_all[ind1:ind2] = self._pred(XXmb)
+
+        return preds_all
 
     def compile(self, jit):
         if jit:

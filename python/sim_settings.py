@@ -9,8 +9,8 @@ test = False
 
 #problem = 'syn_sine'
 #problem = 'kin40k'
-#problem = 'year'
-problem = 'keggu'
+problem = 'year'
+#problem = 'keggu'
 
 oversimdir = './simout/'
 simdir = oversimdir+problem+'/'
@@ -34,9 +34,11 @@ get_D = lambda M: 5
 #get_D = lambda M: 2
 
 if test:
+    for i in range(20):
+        print("Test!")
     Ms = np.arange(6,10,2)
     reps = 2
-    #max_iters = 100
+    max_iters = 100
 
 methods = ['hens','m2']
 #methods = ['hens','four','m2']

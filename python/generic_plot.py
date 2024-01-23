@@ -42,12 +42,12 @@ plt.ylabel("TPI")
 plt.legend()
 
 plt.tight_layout()
-plt.savefig("hen_marg.png")
+plt.savefig(problem+"_marg.png")
 plt.close()
 
 alpha = 0.2
 for tt in ['Time','TPI']:
-    fname = 'hen_paretto_'+tt+'.png'
+    fname = problem+'_paretto_'+tt+'.png'
     fig = plt.figure()
     for meth in methods:
         plt.scatter(rdf.loc[meth,'MSE'], rdf.loc[meth,tt], label = meth, color = colors[meth])

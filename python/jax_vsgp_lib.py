@@ -25,7 +25,7 @@ else:
 
 class VSGP(object):
     #def __init__(self, X, y, M = 10, jit = True, natural = True, N_es = 512):
-    def __init__(self, X, y, M = 10, jit = True, natural = True, N_es = 1024, es_patience = 25):
+    def __init__(self, X, y, M = 10, jit = True, natural = True, N_es = 1024, es_patience = None):
         print("Bigger ES size.")
         self.meth_name = 'Variational Stochastic GP.'
 
@@ -44,9 +44,13 @@ class VSGP(object):
         self.y_es = y_es
         self.N = self.X.shape[0]
 
+        #self.es_patience = es_patience*self.N # Patience in epochs. #0.066 0.047
+        if es_patience is None:
+            #es_patience = 224400
+            #es_patience = 200000
+            es_patience = 1000
+
         self.es_patience = es_patience # Patience in epochs. #0.066 0.047
-        #self.es_patience = 50 # Patience in epochs. #0.061 0.057
-        #self.es_patience = 10 # Patience in epochs. 0.09 0.12
 
         self.M = M
         ell_init = jnp.repeat(jnp.array(np.log(1e-1), dtype = npdtype),P)
@@ -218,8 +222,11 @@ class VSGP(object):
                 self.mse_es[i//es_every] = jnp.mean(jnp.square(es_pred-self.y_es))
                 opt_iter = np.nanargmin(self.mse_es)*es_every
                 its_since_opt = i-opt_iter
-                eps_since_opt = its_since_opt * mb_size / self.N
-                if eps_since_opt > self.es_patience:
+                #eps_since_opt = its_since_opt * mb_size / self.N
+                #inst_since_opt = its_since_opt * mb_size
+                #if eps_since_opt > self.es_patience:
+                #if inst_since_opt > self.es_patience:
+                if its_since_opt > self.es_patience:
                     print("ES Break!")
                     break
 
@@ -254,7 +261,7 @@ class VSGP(object):
             plt.close()
 
 class HensmanGP(VSGP):
-    def __init__(self, X, y, M = 10, jit = True, natural = True, N_es = 1024, es_patience = 25):
+    def __init__(self, X, y, M = 10, jit = True, natural = True, N_es = 1024, es_patience = None):
         VSGP.__init__(self, X, y, M, jit, natural, N_es, es_patience)
 
         init_samp = np.random.choice(self.N,self.M,replace=self.N<self.M)
@@ -293,7 +300,7 @@ class HensmanGP(VSGP):
 
 # Method 2 Arbitrary RKHS Inducing functions
 class M2GP(VSGP):
-    def __init__(self, X, y, M = 10, D = 5, jit = True, natural = True, N_es = 1024, es_patience = 25):
+    def __init__(self, X, y, M = 10, D = 5, jit = True, natural = True, N_es = 1024, es_patience = None):
         VSGP.__init__(self, X, y, M, jit, natural, N_es, es_patience)
         self.D = D
         A_init = jnp.array(jnp.ones([self.M,D])) / D
@@ -359,7 +366,7 @@ class M2GP(VSGP):
         return Kzz
 
 class FFGP(VSGP):
-    def __init__(self, X, y, M = 10, jit = True, natural = True, N_es = 1024, es_patience = 25):
+    def __init__(self, X, y, M = 10, jit = True, natural = True, N_es = 1024, es_patience = None):
         VSGP.__init__(self, X, y, M, jit, natural, N_es, es_patience)
 
 

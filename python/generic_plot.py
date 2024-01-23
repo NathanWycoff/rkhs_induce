@@ -50,10 +50,10 @@ for tt in ['Time','TPI']:
     fname = 'hen_paretto_'+tt+'.png'
     fig = plt.figure()
     for meth in methods:
-        plt.scatter(rdf.loc[meth,'MSE'], rdf.loc[meth,'Time'], label = meth, color = colors[meth])
-        plt.plot(rdf.loc[meth,'MSE'], rdf.loc[meth,'Time'], color = colors[meth])
+        plt.scatter(rdf.loc[meth,'MSE'], rdf.loc[meth,tt], label = meth, color = colors[meth])
+        plt.plot(rdf.loc[meth,'MSE'], rdf.loc[meth,tt], color = colors[meth])
         mse = df.loc[df['Method']==meth,'MSE']
-        time = df.loc[df['Method']==meth,'Time']
+        time = df.loc[df['Method']==meth,tt]
         plt.scatter(mse, time, color = colors[meth], alpha = alpha)
 
     plt.xlabel("logMSE")

@@ -57,15 +57,17 @@ class VSGP(object):
 
         self.M = M
         ell_init = jnp.repeat(jnp.array(np.log(1e-1), dtype = npdtype),P)
-        #ell_init = jnp.repeat(jnp.array(np.log(1e-4), dtype = npdtype),P)
-        # COVAR =  sigma2*K + (gamma2+g_nug)*I
+        # COVAR =  sigma2*K + (gamma2+eps_nug)*I
         sigma2_init = jnp.array(np.log(1.), dtype = npdtype) # Scale Parameter.
         gamma2_init = jnp.array(np.log(1e-4), dtype = npdtype) # Error Variance.
-        self.params = {'ell': ell_init, 'sigma2' : sigma2_init, 'gamma2' : gamma2_init}
+        #self.params = {'ell': ell_init, 'sigma2' : sigma2_init, 'gamma2' : gamma2_init}
+        g_init = gamma2_init - sigma2_init
+        self.params = {'ell': ell_init, 'sigma2' : sigma2_init, 'g' : g_init}
 
 
         print("TODO: jit to 1e-8?")
-        self.g_nug = 1e-6
+        #self.eps_nug = 1e-6 # 0.078
+        self.eps_nug = 1e-8
         self.natural = natural
         self.tracking = {}
 
@@ -101,7 +103,9 @@ class VSGP(object):
         ## PRECOMPUTING THINGS
         ell = jnp.exp(params['ell'])
         sigma2 = jnp.exp(params['sigma2'])
-        gamma2 = jnp.exp(params['gamma2'])
+        #gamma2 = jnp.exp(params['gamma2'])
+        g = jnp.exp(params['g'])
+        gamma2 = g*sigma2
         # DRY1
         if self.natural:
             theta1 = params['theta1']
@@ -118,13 +122,13 @@ class VSGP(object):
         trust_tfp = False
         assert not trust_tfp
 
-        gI = self.g_nug*jnp.eye(self.M, dtype=npdtype)
+        gI = self.eps_nug*jnp.eye(self.M, dtype=npdtype)
 
         Knm = self.get_Knm(X, params)
         Kmm = self.get_Kmm(params)
 
         # Compute diag of Ktilde directly.
-        Kmmi = jnp.linalg.inv(Kmm+self.g_nug*jnp.eye(self.M, dtype=npdtype)) #Even faster with chol
+        Kmmi = jnp.linalg.inv(Kmm+self.eps_nug*jnp.eye(self.M, dtype=npdtype)) #Even faster with chol
         q_diag = jax.vmap(lambda k: k.T @ Kmmi @ k)(Knm)
         ktilde = sigma2*jnp.ones(mb_size) - q_diag
 
@@ -163,7 +167,7 @@ class VSGP(object):
         return loss
 
     def _pred(self, XX):
-        gI = self.g_nug*jnp.eye(self.M, dtype=npdtype)
+        gI = self.eps_nug*jnp.eye(self.M, dtype=npdtype)
         # DRY1
         if self.natural:
             theta1 = self.params['theta1']
@@ -209,20 +213,26 @@ class VSGP(object):
 
     def fit(self, iters = 100, lr = 5e-3, mb_size = 256, ls_params = {}, verbose = True, debug = False, track = False, es_every=100):
         optimizer = optax.adam(lr)
+        #optimizer = optax.sgd(lr)
         opt_state = optimizer.init(self.params)
+
 
         es_iters = int(np.ceil(iters/es_every))
 
         self.costs = np.nan*np.zeros(iters)
         self.mse_es = np.nan*np.zeros(es_iters)
+        #if track:
+        #    self.nll = np.nan*np.zeros(iters)
+        #    self.tr1 = np.nan*np.zeros(iters)
+        #    self.tr2 = np.nan*np.zeros(iters)
+        #    self.kl = np.nan*np.zeros(iters)
         if track:
-            self.nll = np.nan*np.zeros(iters)
-            self.tr1 = np.nan*np.zeros(iters)
-            self.tr2 = np.nan*np.zeros(iters)
-            self.kl = np.nan*np.zeros(iters)
-        if track:
-            for v in self.params:
-                self.tracking[v] = np.zeros(self.params[v].flatten().shape+(iters,))
+            #self.track_params = ['ell','sigma2','gamma2']
+            self.track_params = ['ell','sigma2','g']
+            for v in self.track_params:
+                self.tracking[v] = np.nan*np.zeros(self.params[v].flatten().shape+(iters,))
+        else:
+            self.track_params = []
         for i in tqdm(range(iters), disable = not verbose):
             batch = np.random.choice(self.N,mb_size,replace=False)
             cost, grad = self.vng_elbo(self.params, self.X[batch,:], self.y[batch])
@@ -244,14 +254,14 @@ class VSGP(object):
                     break
 
             if track:
-                for v in self.params:
+                for v in self.track_params:
                     self.tracking[v][:,i] = jnp.copy(self.params[v].flatten())
-                print("unnecessary eval!")
-                nll, tr1, tr2, kl =  self.get_guys(self.params, self.X, self.y)
-                self.nll[i] = nll
-                self.tr1[i] = tr1
-                self.tr2[i] = tr2
-                self.kl[i] = kl
+                #print("unnecessary eval!")
+                #nll, tr1, tr2, kl =  self.get_guys(self.params, self.X, self.y)
+                #self.nll[i] = nll
+                #self.tr1[i] = tr1
+                #self.tr2[i] = tr2
+                #self.kl[i] = kl
 
         self.last_it = i
 
@@ -264,7 +274,7 @@ class VSGP(object):
             nrows = int(np.ceil(nparams/ncols))
 
             fig = plt.figure()
-            for vi,v in enumerate(self.params):
+            for vi,v in enumerate(self.track_params):
                 plt.subplot(nrows,ncols,vi+1)
                 #plt.plot(self.tracking[v].T)
                 plt.plot(self.tracking[v][:25,:].T)
@@ -421,7 +431,7 @@ class FFGP(VSGP):
         #m_init = jnp.zeros(self.M, dtype = npdtype)
         #Knn = self.get_K(self.X, self.X, jnp.exp(self.params['ell']), jnp.exp(self.params['sigma2']))
         #Knm = self.get_Knm(self.X, self.params)
-        #m_init = Knm.T @ np.linalg.solve(Knn+self.g_nug, self.y)
+        #m_init = Knm.T @ np.linalg.solve(Knn+self.eps_nug, self.y)
         #print("cond init")
 
         m_init = jnp.zeros(self.M, dtype = npdtype)

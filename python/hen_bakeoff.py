@@ -2,8 +2,6 @@
 # -*- coding: utf-8 -*-
 #  vax_vigp_bakeoff.py Author "Nathan Wycoff <nathanbrwycoff@gmail.com>" Date 12.24.2023
 
-# was 45 iters a second
-
 import numpy as np
 import jax.numpy as jnp
 import jax
@@ -24,24 +22,29 @@ config.update("jax_enable_x64", True)
 exec(open("python/jax_vsgp_lib.py").read())
 exec(open("python/sim_settings.py").read())
 
-manual = False
-#manual = True
+#manual = False
+manual = True
 
 if manual:
     for i in range(10):
         print("manual!")
     M = 128
+    #max_iters = 100
+    max_iters = 15000
     seed = 0
     #seed = 5
+    methods = ['hens']
     debug = True
     jit = True
-    track = False
+    track = True
+    es_patience = np.inf
 else:
     M = int(sys.argv[1])
     seed = int(sys.argv[2])
     debug = False
     jit = True
     track = False
+    es_patience = None
 
 sim_id = str(M)+'_'+str(seed)
 
@@ -82,6 +85,7 @@ elif problem in ['year','keggu']:
 else:
     raise Exception("Unknown problem.")
 
+
 ## Rescaling
 mu_y = np.mean(y)
 sig_y = np.std(y)
@@ -106,15 +110,15 @@ mse_ess = []
 for method in methods:
     tt = time()
     if method=='hens':
-        mod = HensmanGP(X, y, M, jit = jit)
+        mod = HensmanGP(X, y, M, jit = jit, es_patience = es_patience)
     elif method=='four':
         #mod = FFGP(X, y, M, jit = jit, es_patience = 10000)
         #print("Biggest boi")
-        mod = FFGP(X, y, M, jit = jit)
+        mod = FFGP(X, y, M, jit = jit, es_patience = es_patience)
         Knm = mod.get_Knm(X, mod.params)
         print(np.max(np.abs(Knm)))
     elif method=='m2':
-        mod = M2GP(X, y, M, D=D, jit = jit)
+        mod = M2GP(X, y, M, D=D, jit = jit, es_patience = es_patience)
     else:
         raise Exception("Unknown method!")
     mod.fit(verbose=verbose, lr=lr, iters=max_iters, debug = debug, mb_size = mb_size, track = track)
@@ -161,3 +165,17 @@ else:
     df = pd.DataFrame(dat)
     df.columns = ['Method','MSE','Time', 'TPI', 'M', 'seed']
     df.to_csv(simdir+'/'+sim_id+'.csv')
+
+### manual sigma2 est.
+#####
+mod.plot()
+#ell = np.exp(mod.params['ell'])
+#sss = 3000
+#subset = np.random.choice(mod.X.shape[0], sss, replace = False)
+#Xs = mod.X[subset,:]
+#ys = mod.y[subset]
+#C = mod.get_K(Xs, Xs, ell, 1.)
+#gI = mod.eps_nug * np.eye(sss)
+#sigma2_est = np.sum(ys*jnp.linalg.solve(C+gI,ys)) / sss
+#print(sigma2_est)
+#print(np.exp(mod.params['sigma2']))

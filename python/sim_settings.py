@@ -7,9 +7,9 @@ import numpy as np
 #test = True
 test = False
 
-#problem = 'syn_sine'
+problem = 'syn_sine'
 #problem = 'kin40k'
-problem = 'year'
+#problem = 'year'
 #problem = 'keggu'
 
 oversimdir = './simout/'

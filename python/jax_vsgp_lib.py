@@ -44,7 +44,6 @@ class VSGP(object):
         self.y_es = y_es
         self.N = self.X.shape[0]
 
-
         self.pred_mb_size = 1024
 
         #self.es_patience = es_patience*self.N # Patience in epochs. #0.066 0.047
@@ -270,8 +269,9 @@ class VSGP(object):
             print("Skipping plotting of empty tracking")
         else:
             nparams = len(self.tracking)
+            nfigs = nparams + 1 # 1 for cost.
             ncols = 2
-            nrows = int(np.ceil(nparams/ncols))
+            nrows = int(np.ceil(nfigs/ncols))
 
             fig = plt.figure()
             for vi,v in enumerate(self.track_params):
@@ -279,6 +279,9 @@ class VSGP(object):
                 #plt.plot(self.tracking[v].T)
                 plt.plot(self.tracking[v][:25,:].T)
                 plt.title(v)
+            plt.subplot(nrows,ncols,nfigs)
+            plt.plot(self.costs)
+            plt.title("Cost")
             plt.tight_layout()
             plt.savefig(fname)
             plt.close()

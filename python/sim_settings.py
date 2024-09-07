@@ -4,6 +4,10 @@
 
 import numpy as np
 
+print("Gpytorch mode.")
+
+double_precision = True
+
 #test = True
 test = False
 
@@ -40,8 +44,8 @@ if test:
     reps = 2
     max_iters = 100
 
-methods = ['hens','m2','gpytorch','sphere']
-my_methods = ['hens','m2']
+#methods = ['hens','m2','gpytorch','sphere']
+methods = ['gpytorch']
 #methods = ['hens','four','m2']
 
 colors = {'hens':'blue','four':'green','m2':'orange'}

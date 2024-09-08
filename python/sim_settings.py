@@ -44,8 +44,7 @@ if test:
     reps = 2
     max_iters = 100
 
-#methods = ['hens','m2','gpytorch','sphere']
-methods = ['gpytorch']
-#methods = ['hens','four','m2']
+methods = ['torch_vanil','torch_rkhs']
 
-colors = {'hens':'blue','four':'green','m2':'orange'}
+#colors = {'hens':'blue','four':'green','m2':'orange'}
+colors = {'torch_vanil':'blue','torch_rkhs':'green'}

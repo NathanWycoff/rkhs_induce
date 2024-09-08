@@ -131,7 +131,7 @@ basis_vectors = torch.rand([D,M,P])
 basis_coefs = torch.rand([D,M,1])
 inducing_points = torch.concat([basis_vectors,basis_coefs], axis = 2)
 
-model = GPModel(inducing_points=inducing_points)
+model = GPModel(inducing_points=inducing_points, rkhs = True)
 likelihood = gpytorch.likelihoods.GaussianLikelihood()
 model.double()
 likelihood.double()

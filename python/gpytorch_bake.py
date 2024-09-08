@@ -33,7 +33,6 @@ from gpytorch.variational import VariationalStrategy
 
 config.update("jax_enable_x64", True)
 
-exec(open("python/jax_vsgp_lib.py").read())
 exec(open("python/sim_settings.py").read())
 
 #manual = False
@@ -45,7 +44,6 @@ if manual:
     M = 128
     #max_iters = 100
     max_iters = 4000
-    #max_iters = 15000
     seed = 0
     #seed = 5
     #methods = ['hens']
@@ -115,28 +113,20 @@ max_X = np.max(X, axis = 0)
 X = (X-min_X[np.newaxis,:]) / (max_X-min_X)[np.newaxis,:]
 XX = (XX-min_X[np.newaxis,:]) / (max_X-min_X)[np.newaxis,:]
 
-## Run a small model to compile stuff before anything is timed.
-mod = HensmanGP(X, y, M, jit = jit)
-mod.fit(verbose=verbose, lr=lr, iters=20, debug = debug, mb_size = mb_size, track = track)
-
 mses = []
 tds = []
 tpis = []
 costs = []
-mse_ess = []
 for method in methods:
     print(method)
     tt = time()
-    if method=='hens':
-        mod = HensmanGP(X, y, M, jit = jit, es_patience = es_patience)
-    elif method=='four':
+    if method=='four':
+        print("I think this is still ours.")
         #mod = FFGP(X, y, M, jit = jit, es_patience = 10000)
         #print("Biggest boi")
         mod = FFGP(X, y, M, jit = jit, es_patience = es_patience)
         Knm = mod.get_Knm(X, mod.params)
         print(np.max(np.abs(Knm)))
-    elif method=='m2':
-        mod = M2GP(X, y, M, D=D, jit = jit, es_patience = es_patience)
     elif method=='sphere':
         key = jax.random.PRNGKey(42)
 
@@ -165,12 +155,18 @@ for method in methods:
         param_new, state, elbos = m_new.fit(param, train_step, optax.adam(lr), max_iters)
         pred_mu, pred_var = m_new.predict_diag(param_new, XX)
         yy_hat = pred_mu
-    elif method=='gpytorch':
+    elif 'torch' in method:
+        if method=='torch_vanil':
+            rkhs = False
+        elif method=='torch_rkhs':
+            rkhs = True
+        else:
+            raise Exception("Unknown torch method '" + method + "'")
 
         class GPModel(ApproximateGP):
-            def __init__(self, inducing_points):
-                variational_distribution = CholeskyVariationalDistribution(inducing_points.size(0))
-                variational_strategy = VariationalStrategy(self, inducing_points, variational_distribution, learn_inducing_locations=True)
+            def __init__(self, inducing_points, rkhs):
+                variational_distribution = CholeskyVariationalDistribution(inducing_points.size(-2))
+                variational_strategy = VariationalStrategy(self, inducing_points, variational_distribution, learn_inducing_locations=True, rkhs = rkhs)
                 super(GPModel, self).__init__(variational_strategy)
                 self.mean_module = gpytorch.means.ConstantMean()
                 self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())
@@ -189,8 +185,15 @@ for method in methods:
         test_dataset = TensorDataset(test_x, test_y)
         test_loader = DataLoader(test_dataset, batch_size=mb_size, shuffle=True)
 
-        inducing_points = train_x[:M, :]
-        model = GPModel(inducing_points=inducing_points)
+        if rkhs:
+            basis_vectors = torch.rand([D,M,P])
+            #basis_coefs = torch.rand([D,M,1])
+            basis_coefs = torch.randn([D,M,1])
+            inducing_points = torch.concat([basis_vectors,basis_coefs], axis = 2)
+        else:
+            inducing_points = train_x[np.random.choice(train_x.shape[0],M), :]
+
+        model = GPModel(inducing_points=inducing_points, rkhs = rkhs)
         likelihood = gpytorch.likelihoods.GaussianLikelihood()
         model.double()
         likelihood.double()
@@ -211,6 +214,8 @@ for method in methods:
 
         mb_per_epoch = np.ceil(N/mb_size)
         epochs_iter = tqdm(range(int(np.ceil(max_iters/mb_per_epoch))), desc="Epoch")
+        costs_it = np.nan*np.zeros(max_iters)
+        ii = 0
         for i in epochs_iter:
             # Within each iteration, we will go over each minibatch of data
             minibatch_iter = tqdm(train_loader, desc="Minibatch", leave=False)
@@ -221,21 +226,15 @@ for method in methods:
                 minibatch_iter.set_postfix(loss=loss.item())
                 loss.backward()
                 optimizer.step()
+                if ii < max_iters:
+                    costs_it[ii] = loss.detach().numpy()
+                    ii += 1
 
         model.eval()
         likelihood.eval()
         yy_hat = model(test_x).mean.detach().numpy()
-        #means = torch.tensor([0.])
-        #with torch.no_grad():
-        #    for x_batch, y_batch in test_loader:
-        #        preds = model(x_batch)
-        #        means = torch.cat([means, preds.mean.cpu()])
-        #yy_hat = means[1:].detach().numpy()
     else:
         raise Exception("Unknown method!")
-    if method in my_methods:
-        mod.fit(verbose=verbose, lr=lr, iters=max_iters, debug = debug, mb_size = mb_size, track = track)
-        yy_hat = mod.pred(XX)
 
     td = time()-tt
     tpi = td / max_iters
@@ -245,8 +244,7 @@ for method in methods:
     tds.append(td)
     tpis.append(tpi)
 
-    costs.append(mod.costs)
-    mse_ess.append(mod.mse_es)
+    costs.append(costs_it)
     if not manual:
         del mod
 
@@ -257,9 +255,9 @@ for mi,method in enumerate(methods):
     plt.subplot(1,len(methods),1+mi)
     plt.plot(costs[mi])
     plt.title(method)
-    ax = plt.gca()
-    ax1 = ax.twinx()
-    ax1.plot(100*np.arange(len(mse_ess[mi])),mse_ess[mi], color = 'green')
+    #ax = plt.gca()
+    #ax1 = ax.twinx()
+    #ax1.plot(100*np.arange(len(mse_ess[mi])),mse_ess[mi], color = 'green')
 plt.tight_layout()
 plt.savefig(fname)
 plt.close()
@@ -278,16 +276,3 @@ else:
     df.columns = ['Method','MSE','Time', 'TPI', 'M', 'seed']
     df.to_csv(simdir+'/'+sim_id+'.csv')
 
-### manual sigma2 est.
-#####
-mod.plot()
-#ell = np.exp(mod.params['ell'])
-#sss = 3000
-#subset = np.random.choice(mod.X.shape[0], sss, replace = False)
-#Xs = mod.X[subset,:]
-#ys = mod.y[subset]
-#C = mod.get_K(Xs, Xs, ell, 1.)
-#gI = mod.eps_nug * np.eye(sss)
-#sigma2_est = np.sum(ys*jnp.linalg.solve(C+gI,ys)) / sss
-#print(sigma2_est)
-#print(np.exp(mod.params['sigma2']))

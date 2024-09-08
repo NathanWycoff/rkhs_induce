@@ -41,7 +41,9 @@ manual = True
 if manual:
     for i in range(10):
         print("manual!")
-    M = 128
+    #M = 128
+    #M = 5
+    M = 10
     #max_iters = 100
     max_iters = 4000
     seed = 0
@@ -197,6 +199,9 @@ for method in methods:
         likelihood = gpytorch.likelihoods.GaussianLikelihood()
         model.double()
         likelihood.double()
+
+        ls_init = -P
+        model.covar_module.base_kernel.raw_lengthscale = torch.nn.Parameter(ls_init*torch.ones_like(model.covar_module.base_kernel.raw_lengthscale))
 
         if torch.cuda.is_available():
             model = model.cuda()

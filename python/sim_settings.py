@@ -24,12 +24,15 @@ datdir = 'pickles'
 
 #Ms = np.arange(40,321,40)
 Ms = np.arange(40,201,20)
-reps = 5
+reps = 100
 
 ## Optimization params
 lr = 1e-3
 max_iters = 30000 
 mb_size = 256
+#mb_size = 128
+#mb_size = 64
+#mb_size = 32
 verbose = True
 
 ## M2 specific

@@ -42,17 +42,19 @@ for i in range(10):
 M = 128
 #max_iters = 100
 max_iters = 4000
-#max_iters = 500
-#max_iters = 15000
+#max_iters = 10000
 seed = 0
 #seed = 5
 #methods = ['hens']
 #methods = ['sphere']
 lr = 1e-2
+#lr = 1e-3
 debug = True
 jit = True
 track = True
 es_patience = np.inf
+
+rkhs = False
 
 np.random.seed(123)
 
@@ -106,7 +108,7 @@ XX = (XX-min_X[np.newaxis,:]) / (max_X-min_X)[np.newaxis,:]
 
 class GPModel(ApproximateGP):
     def __init__(self, inducing_points, rkhs):
-        variational_distribution = CholeskyVariationalDistribution(inducing_points.size(1))
+        variational_distribution = CholeskyVariationalDistribution(inducing_points.size(-2))
         variational_strategy = VariationalStrategy(self, inducing_points, variational_distribution, learn_inducing_locations=True, rkhs = rkhs)
         super(GPModel, self).__init__(variational_strategy)
         self.mean_module = gpytorch.means.ConstantMean()
@@ -127,14 +129,23 @@ test_dataset = TensorDataset(test_x, test_y)
 test_loader = DataLoader(test_dataset, batch_size=mb_size, shuffle=True)
 
 #inducing_points = train_x[:M, :]
-basis_vectors = torch.rand([D,M,P])
-basis_coefs = torch.rand([D,M,1])
-inducing_points = torch.concat([basis_vectors,basis_coefs], axis = 2)
+if rkhs:
+    basis_vectors = torch.rand([D,M,P])
+    basis_coefs = torch.rand([D,M,1])
+    inducing_points = torch.concat([basis_vectors,basis_coefs], axis = 2)
+else:
+    inducing_points = train_x[np.random.choice(train_x.shape[0],M), :]
 
-model = GPModel(inducing_points=inducing_points, rkhs = True)
+
+model = GPModel(inducing_points=inducing_points, rkhs = rkhs)
 likelihood = gpytorch.likelihoods.GaussianLikelihood()
 model.double()
 likelihood.double()
+
+#
+ls_init = -P
+model.covar_module.base_kernel.raw_lengthscale = torch.nn.Parameter(ls_init*torch.ones_like(model.covar_module.base_kernel.raw_lengthscale))
+#
 
 if torch.cuda.is_available():
     model = model.cuda()
@@ -150,6 +161,14 @@ optimizer = torch.optim.Adam([
 # Our loss object. We're using the VariationalELBO
 mll = gpytorch.mlls.VariationalELBO(likelihood, model, num_data=train_y.size(0))
 
+XX_torch = torch.tensor(XX)
+yy_torch = torch.tensor(yy)
+
+costs = []
+lengthscales = []
+variances = []
+oos_mse = []
+oos_nll = []
 mb_per_epoch = np.ceil(N/mb_size)
 epochs_iter = tqdm(range(int(np.ceil(max_iters/mb_per_epoch))), desc="Epoch")
 for i in epochs_iter:
@@ -162,9 +181,46 @@ for i in epochs_iter:
         minibatch_iter.set_postfix(loss=loss.item())
         loss.backward()
         optimizer.step()
+        costs.append(loss.detach().numpy())
+        lengthscales.append(float(model.covar_module.base_kernel.raw_lengthscale.detach().numpy()))
+        variances.append(float(model.covar_module.raw_outputscale.detach().numpy()))
+
+        yy_hat = model(XX_torch).mean.detach().numpy()
+
+        #oos_mse.append(float(np.mean(np.square(yy-yy_hat))))
+        #oos_nll.append(model(XX_torch).log_prob(yy_torch))
+
+
+#costs = np.array(costs)
+#lengthscales = np.array(lengthscales).flatten()
+#variances = np.array(variances)
 
 model.eval()
 likelihood.eval()
 yy_hat = model(test_x).mean.detach().numpy()
 
 print(np.mean(np.square(yy-yy_hat)))
+
+fig = plt.figure(figsize=[4,12])
+plt.subplot(4,1,1)
+plt.plot(costs)
+#plt.subplot(4,1,2)
+#plt.plot(oos_mse)
+plt.subplot(4,1,3)
+plt.plot(lengthscales)
+plt.subplot(4,1,4)
+plt.plot(variances)
+plt.savefig("costs.pdf")
+plt.close()
+
+print("mean params:")
+for mm in model.mean_module.parameters():
+    print(mm)
+
+print("covar params:")
+for mm in model.covar_module.parameters():
+    print(mm)
+
+for i in model.named_hyperparameters():
+    print(i)
+

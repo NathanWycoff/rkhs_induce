@@ -35,15 +35,25 @@ config.update("jax_enable_x64", True)
 
 exec(open("python/sim_settings.py").read())
 
-#manual = False
-manual = True
+manual = False
+#manual = True
+
+#init_style = 'runif'
+init_style = 'vanil'
 
 if manual:
+    if len(sys.argv)>1:
+        for i in range(5):
+            print('!!!!!!')
+            print("Manual mode engaged but command line arguments passed; exiting.")
+            print('!!!!!!')
+        quit()
     for i in range(10):
         print("manual!")
     #M = 128
     #M = 5
-    M = 10
+    #M = 10
+    M = 50
     #max_iters = 100
     max_iters = 4000
     seed = 0
@@ -188,12 +198,17 @@ for method in methods:
         test_loader = DataLoader(test_dataset, batch_size=mb_size, shuffle=True)
 
         if rkhs:
-            basis_vectors = torch.rand([D,M,P])
-            #basis_coefs = torch.rand([D,M,1])
-            basis_coefs = torch.randn([D,M,1])
+            if init_style=='runif':
+                basis_vectors = torch.rand([D,M,P])
+                basis_coefs = torch.randn([D,M,1])
+            elif init_style=='vanil':
+                basis_vectors = torch.stack([train_x[np.random.choice(train_x.shape[0], M, replace=False),:] for _ in range(D)])
+                basis_coefs = torch.stack([torch.ones(M)]+[torch.zeros(M) for _ in range(D-1)]).unsqueeze(-1)
+            else:
+                raise Exception('Unknown init for RKHS mode.')
             inducing_points = torch.concat([basis_vectors,basis_coefs], axis = 2)
         else:
-            inducing_points = train_x[np.random.choice(train_x.shape[0],M), :]
+            inducing_points = train_x[np.random.choice(train_x.shape[0],M,replace=False), :]
 
         model = GPModel(inducing_points=inducing_points, rkhs = rkhs)
         likelihood = gpytorch.likelihoods.GaussianLikelihood()
@@ -250,8 +265,6 @@ for method in methods:
     tpis.append(tpi)
 
     costs.append(costs_it)
-    if not manual:
-        del mod
 
 ## For debugging, show optimization cost.
 fname = 'temp.png' if manual else figsdir+"/"+sim_id+".png"
@@ -268,10 +281,10 @@ plt.savefig(fname)
 plt.close()
 
 ## Save simulation results.
+print(mses)
 if manual:
     for i in range(10):
         print("manual!")
-    print(mses)
 else:
     #df = pd.DataFrame([['hen',mse, td, tpi, M, seed], ['m2',mse2, td2, tpi2, M, seed]])
     dat = []

@@ -18,8 +18,7 @@ df['MSE'] = np.log10(df['MSE'])
 
 rdf = df.groupby(['Method','M']).median()
 
-
-fig = plt.figure(figsize=[len(methods)*3,3])
+fig = plt.figure(figsize=[len(methods)*4,3])
 
 plt.subplot(1,3,1)
 for meth in methods:

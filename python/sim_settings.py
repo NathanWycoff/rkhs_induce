@@ -4,8 +4,6 @@
 
 import numpy as np
 
-print("Gpytorch mode.")
-
 double_precision = True
 
 #test = True
@@ -23,12 +21,20 @@ figsdir = overfigsdir+problem+'/'
 datdir = 'pickles'
 
 #Ms = np.arange(40,321,40)
-Ms = np.arange(40,201,20)
-reps = 100
+#Ms = np.arange(40,201,20)
+if problem=='syn_sine':
+    #Ms = np.arange(1,100,20)
+    Ms = np.ceil(np.logspace(0,np.log10(200),num=10)).astype(int)
+else:
+    Ms = np.arange(40,201,20)
+#reps = 100
+reps = 10
 
 ## Optimization params
-lr = 1e-3
-max_iters = 30000 
+#lr = 1e-3
+#max_iters = 30000 
+max_iters = 4000
+lr = 1e-2
 mb_size = 256
 #mb_size = 128
 #mb_size = 64
@@ -47,7 +53,8 @@ if test:
     reps = 2
     max_iters = 100
 
-methods = ['torch_vanil','torch_rkhs']
+#methods = ['torch_vanil','torch_rkhs']
+methods = ['torch_rkhs','torch_vanil']
 
 #colors = {'hens':'blue','four':'green','m2':'orange'}
 colors = {'torch_vanil':'blue','torch_rkhs':'green'}

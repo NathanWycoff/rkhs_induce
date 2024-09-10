@@ -9,8 +9,8 @@ double_precision = True
 #test = True
 test = False
 
-problem = 'syn_sine'
-#problem = 'kin40k'
+#problem = 'syn_sine'
+problem = 'kin40k'
 #problem = 'year'
 #problem = 'keggu'
 
@@ -22,11 +22,12 @@ datdir = 'pickles'
 
 #Ms = np.arange(40,321,40)
 #Ms = np.arange(40,201,20)
-if problem=='syn_sine':
-    #Ms = np.arange(1,100,20)
-    Ms = np.ceil(np.logspace(0,np.log10(200),num=10)).astype(int)
-else:
-    Ms = np.arange(40,201,20)
+#if problem=='syn_sine':
+#    #Ms = np.arange(1,100,20)
+#    Ms = np.ceil(np.logspace(0,np.log10(200),num=10)).astype(int)
+#else:
+    #Ms = np.arange(40,201,20)
+Ms = np.ceil(np.logspace(0,np.log10(200),num=10)).astype(int)
 #reps = 100
 reps = 10
 

@@ -143,7 +143,11 @@ model.double()
 likelihood.double()
 
 #
-ls_init = -P
+#ls_init = -P
+#ls_init = np.log(1e-2)
+#ls_init = np.log(1e-2*np.sqrt(P))
+#ls_init = np.log(np.sqrt(P))
+ls_init = np.log(1.)
 model.covar_module.base_kernel.raw_lengthscale = torch.nn.Parameter(ls_init*torch.ones_like(model.covar_module.base_kernel.raw_lengthscale))
 #
 

@@ -215,7 +215,12 @@ for method in methods:
         model.double()
         likelihood.double()
 
-        ls_init = -P
+        if problem=='syn_sine':
+            ls_init = -P
+        elif problem=='kin40k':
+            ls_init = np.log(1.)
+        else:
+            raise Exception("Kernel initialization ont defined.")
         model.covar_module.base_kernel.raw_lengthscale = torch.nn.Parameter(ls_init*torch.ones_like(model.covar_module.base_kernel.raw_lengthscale))
 
         if torch.cuda.is_available():

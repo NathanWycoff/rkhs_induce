@@ -1,4 +1,6 @@
 *.pdf
+*.out
+*.err
 *.png
 *.swp
 *.swo

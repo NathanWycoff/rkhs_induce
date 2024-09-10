@@ -27,7 +27,9 @@ datdir = 'pickles'
 #    Ms = np.ceil(np.logspace(0,np.log10(200),num=10)).astype(int)
 #else:
     #Ms = np.arange(40,201,20)
-Ms = np.ceil(np.logspace(0,np.log10(200),num=10)).astype(int)
+#Ms = np.ceil(np.logspace(0,np.log10(200),num=10)).astype(int)
+Ms = np.ceil(np.logspace(0,np.log10(500),num=20)).astype(int)
+#Ms = np.ceil(np.logspace(np.log10(200),np.log10(1000),num=10)).astype(int)
 #reps = 100
 reps = 10
 

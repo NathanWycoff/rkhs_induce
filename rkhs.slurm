@@ -8,7 +8,7 @@
 #SBATCH --job-name=rkhs
 #SBATCH --output=%x-%A-%3a.out
 #SBATCH --error=%x-%A-%4a.err
-#SBATCH --array=1-100
+#SBATCH --array=1-200
 
 module load miniconda/22.11.1-1
 module load cuda/11.4.0

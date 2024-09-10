@@ -33,6 +33,7 @@ from gpytorch.variational import VariationalStrategy
 
 #config.update("jax_enable_x64", True)
 
+
 exec(open("python/sim_settings.py").read())
 
 manual = False
@@ -76,6 +77,13 @@ else:
 sim_id = str(M)+'_'+str(seed)
 
 np.random.seed(seed)
+
+if seed % 2 == 0:
+    methods = list(reversed(methods))
+
+print('-----')
+print(methods)
+print('-----')
 
 D = get_D(M)
 
@@ -131,7 +139,6 @@ tpis = []
 costs = []
 for method in methods:
     print(method)
-    tt = time()
     if method=='four':
         print("I think this is still ours.")
         #mod = FFGP(X, y, M, jit = jit, es_patience = 10000)
@@ -244,6 +251,8 @@ for method in methods:
         # Our loss object. We're using the VariationalELBO
         mll = gpytorch.mlls.VariationalELBO(likelihood, model, num_data=train_y.size(0))
 
+        tt = time()
+
         mb_per_epoch = np.ceil(N/mb_size)
         epochs_iter = tqdm(range(int(np.ceil(max_iters/mb_per_epoch))), desc="Epoch")
         costs_it = np.nan*np.zeros(max_iters)
@@ -263,6 +272,8 @@ for method in methods:
                     costs_it[ii] = loss.cpu().detach().numpy()
                     ii += 1
 
+        td = time()-tt
+
         model.eval()
         likelihood.eval()
         #yy_hat = model(test_x).mean.detach().numpy()
@@ -270,7 +281,6 @@ for method in methods:
     else:
         raise Exception("Unknown method!")
 
-    td = time()-tt
     tpi = td / max_iters
     mse = np.mean(np.square(yy_hat-yy))
 

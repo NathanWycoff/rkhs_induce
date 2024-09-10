@@ -33,7 +33,6 @@ reps = 10
 
 ## Optimization params
 #lr = 1e-3
-#max_iters = 30000 
 max_iters = 4000
 lr = 1e-2
 mb_size = 256

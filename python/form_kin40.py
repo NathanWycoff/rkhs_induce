@@ -21,10 +21,10 @@ test_y_url = "https://github.com/trungngv/fgp/raw/master/data/kin40k/kin40k_test
 train_X_url = "https://github.com/trungngv/fgp/raw/master/data/kin40k/kin40k_train_data.asc"
 train_y_url = "https://github.com/trungngv/fgp/raw/master/data/kin40k/kin40k_train_labels.asc"
 
-test_X = np.array(pd.read_csv(test_X_url, sep = "\s+", header = None))
-test_y = np.array(pd.read_csv(test_y_url, sep = "\s+", header = None)).flatten()
-train_X = np.array(pd.read_csv(train_X_url, sep = "\s+", header = None))
-train_y = np.array(pd.read_csv(train_y_url, sep = "\s+", header = None)).flatten()
+test_X = np.array(pd.read_csv(test_X_url, sep = r"\s+", header = None))
+test_y = np.array(pd.read_csv(test_y_url, sep = r"\s+", header = None)).flatten()
+train_X = np.array(pd.read_csv(train_X_url, sep = r"\s+", header = None))
+train_y = np.array(pd.read_csv(train_y_url, sep = r"\s+", header = None)).flatten()
 
 if not os.path.exists(datdir):
     os.makedirs(datdir)

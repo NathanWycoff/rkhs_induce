@@ -3,26 +3,26 @@
 #  vax_vigp_bakeoff.py Author "Nathan Wycoff <nathanbrwycoff@gmail.com>" Date 12.24.2023
 
 import numpy as np
-import jax.numpy as jnp
-import jax
+#import jax.numpy as jnp
+#import jax
 import matplotlib.pyplot as plt
 import matplotlib.tri as mtri
 import matplotlib.cm as cm
-from tensorflow_probability.substrates import jax as tfp
-from jax import config
+#from tensorflow_probability.substrates import jax as tfp
+#from jax import config
 from tqdm import tqdm
-import optax
+#import optax
 from time import time
 import sys
 import pandas as pd
 import pickle
 
-from gpfy.likelihoods import Gaussian
-from gpfy.model import GP
-from gpfy.optimization import create_training_step
-from gpfy.spherical import NTK
-from gpfy.spherical_harmonics import SphericalHarmonics
-from gpfy.variational import VariationalDistributionTriL
+#from gpfy.likelihoods import Gaussian
+#from gpfy.model import GP
+#from gpfy.optimization import create_training_step
+#from gpfy.spherical import NTK
+#from gpfy.spherical_harmonics import SphericalHarmonics
+#from gpfy.variational import VariationalDistributionTriL
 
 import torch
 from torch.utils.data import TensorDataset, DataLoader
@@ -31,7 +31,7 @@ from gpytorch.models import ApproximateGP
 from gpytorch.variational import CholeskyVariationalDistribution
 from gpytorch.variational import VariationalStrategy
 
-config.update("jax_enable_x64", True)
+#config.update("jax_enable_x64", True)
 
 exec(open("python/sim_settings.py").read())
 
@@ -153,7 +153,7 @@ for method in methods:
         m_new = m.conditional(sh, q)
         data_dict = {"x": X, "y": y}
         from datasets import Dataset
-        dataset = Dataset.from_dict(data_dict).with_format("jax", dtype=jnp.float64)
+        dataset = Dataset.from_dict(data_dict).with_format("jax", dtype=np.float64)
         param = m_new.init(
             key,
             input_dim=P,
@@ -190,12 +190,8 @@ for method in methods:
 
         train_x = torch.tensor(X)
         train_y = torch.tensor(y)
-        train_dataset = TensorDataset(train_x, train_y)
-        train_loader = DataLoader(train_dataset, batch_size=mb_size, shuffle=True)
         test_x = torch.tensor(XX)
         test_y = torch.tensor(yy)
-        test_dataset = TensorDataset(test_x, test_y)
-        test_loader = DataLoader(test_dataset, batch_size=mb_size, shuffle=True)
 
         if rkhs:
             if init_style=='runif':
@@ -224,8 +220,19 @@ for method in methods:
         model.covar_module.base_kernel.raw_lengthscale = torch.nn.Parameter(ls_init*torch.ones_like(model.covar_module.base_kernel.raw_lengthscale))
 
         if torch.cuda.is_available():
+            print("Cuda detected")
             model = model.cuda()
             likelihood = likelihood.cuda()
+            train_x = train_x.cuda()
+            train_y = train_y.cuda()
+            test_x = test_x.cuda()
+            test_y = test_y.cuda()
+
+        train_dataset = TensorDataset(train_x, train_y)
+        train_loader = DataLoader(train_dataset, batch_size=mb_size, shuffle=True)
+        test_dataset = TensorDataset(test_x, test_y)
+        test_loader = DataLoader(test_dataset, batch_size=mb_size, shuffle=True)
+
         model.train()
         likelihood.train()
 
@@ -252,18 +259,20 @@ for method in methods:
                 loss.backward()
                 optimizer.step()
                 if ii < max_iters:
-                    costs_it[ii] = loss.detach().numpy()
+                    #costs_it[ii] = loss.detach().numpy()
+                    costs_it[ii] = loss.cpu().detach().numpy()
                     ii += 1
 
         model.eval()
         likelihood.eval()
-        yy_hat = model(test_x).mean.detach().numpy()
+        #yy_hat = model(test_x).mean.detach().numpy()
+        yy_hat = model(test_x).mean.cpu().detach().numpy()
     else:
         raise Exception("Unknown method!")
 
     td = time()-tt
     tpi = td / max_iters
-    mse = jnp.mean(jnp.square(yy_hat-yy))
+    mse = np.mean(np.square(yy_hat-yy))
 
     mses.append(mse)
     tds.append(td)

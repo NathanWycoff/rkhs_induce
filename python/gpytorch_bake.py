@@ -2,6 +2,8 @@
 # -*- coding: utf-8 -*-
 #  vax_vigp_bakeoff.py Author "Nathan Wycoff <nathanbrwycoff@gmail.com>" Date 12.24.2023
 
+print("Preload")
+
 import numpy as np
 #import jax.numpy as jnp
 #import jax
@@ -30,6 +32,8 @@ import gpytorch
 from gpytorch.models import ApproximateGP
 from gpytorch.variational import CholeskyVariationalDistribution
 from gpytorch.variational import VariationalStrategy
+
+print("Post import")
 
 #config.update("jax_enable_x64", True)
 
@@ -78,8 +82,8 @@ sim_id = str(M)+'_'+str(seed)
 
 np.random.seed(seed)
 
-if seed % 2 == 0:
-    methods = list(reversed(methods))
+#if seed % 2 == 0:
+#    methods = list(reversed(methods))
 
 print('-----')
 print(methods)

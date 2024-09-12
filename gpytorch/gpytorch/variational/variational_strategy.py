@@ -29,8 +29,6 @@ from ..utils.memoize import cached, clear_cache_hook, pop_from_cache_ignore_args
 from ..utils.warnings import OldVersionWarning
 from . import _VariationalDistribution
 
-print("lets look into lazy tensors at some point")
-
 def _ensure_updated_strategy_flag_set(
     state_dict: Dict[str, Tensor],
     prefix: str,
@@ -218,23 +216,25 @@ class VariationalStrategy(_VariationalStrategy):
             #print("lets look into lazy tensors at some point")
             big_x = torch.tile(x[None,:,:], [D,1,1])
             ip = inducing_points[:,:,:-1]
-            big_Kuv = self.model.covar_module.forward(ip, big_x)
-            #big_Kuv = self.model.covar_module(ip, big_x)
+            #big_Kuv = self.model.covar_module.forward(ip, big_x)
+            big_Kuv = self.model.covar_module(ip, big_x)
 
             bip1 = torch.tile(ip[:,None,:,:], [1,D,1,1])
             bip2 = torch.tile(ip[None,:,:,:], [D,1,1,1])
-            big_Kuu = self.model.covar_module.forward(bip1,bip2)
-            #big_Kuu = self.model.covar_module(bip1,bip2)
+            #big_Kuu = self.model.covar_module.forward(bip1,bip2)
+            big_Kuu = self.model.covar_module(bip1,bip2)
 
             #print("lets look into lazy tensors at some point")
             A = inducing_points[:,:,-1]
-            Kuv = torch.einsum('ijk,ij->jk', big_Kuv, A)
-            Kuu = torch.einsum('ik,ijkl,jl->kl', A, big_Kuu, A)
+            Kuv = torch.sum(A[:,:,None]*big_Kuv, dim = 0)
+            #Kuv = torch.einsum('ijk,ij->jk', big_Kuv, A)
+            Kuu = torch.sum(torch.sum(A[:,None,:,None] * A[None,:,None,:] * big_Kuu, dim=0), dim = 0)
+            #Kuu = torch.einsum('ik,ijkl,jl->kl', A, big_Kuu, A)
 
             ## Package for rest of function.
             test_mean = self.model.mean_module(x)
             induc_induc_covar = Kuu
-            induc_data_covar = Kuv
+            induc_data_covar = Kuv.to_dense()
             data_data_covar = self.model.covar_module(x)
 
         else:

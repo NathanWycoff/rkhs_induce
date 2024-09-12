@@ -27,8 +27,9 @@ datdir = 'pickles'
 #    Ms = np.ceil(np.logspace(0,np.log10(200),num=10)).astype(int)
 #else:
     #Ms = np.arange(40,201,20)
-#Ms = np.ceil(np.logspace(0,np.log10(200),num=10)).astype(int)
-Ms = np.ceil(np.logspace(0,np.log10(500),num=20)).astype(int)
+#Ms = np.ceil(np.logspace(0,np.log10(50),num=10)).astype(int)
+#Ms = np.ceil(np.logspace(0,np.log10(500),num=20)).astype(int)
+Ms = np.ceil(np.logspace(0,np.log10(500),num=10)).astype(int)
 #Ms = np.ceil(np.logspace(np.log10(200),np.log10(1000),num=10)).astype(int)
 #reps = 100
 reps = 10
@@ -44,9 +45,12 @@ mb_size = 256
 verbose = True
 
 ## M2 specific
-#get_D = lambda M: int(np.ceil(np.sqrt(M)))
-get_D = lambda M: 5
+get_D = lambda M: int(np.ceil(np.sqrt(M)))
+#get_D = lambda M: 5
+#get_D = lambda M: 10
+#get_D = lambda M: 3
 #get_D = lambda M: 2
+#get_D = lambda M: 40
 
 if test:
     for i in range(20):

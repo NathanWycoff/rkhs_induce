@@ -30,6 +30,8 @@ datdir = 'pickles'
 #Ms = np.ceil(np.logspace(0,np.log10(50),num=10)).astype(int)
 #Ms = np.ceil(np.logspace(0,np.log10(500),num=20)).astype(int)
 Ms = np.ceil(np.logspace(0,np.log10(500),num=10)).astype(int)
+#Ms = np.ceil(np.linspace(1,500,num=10)).astype(int)
+#Ms = np.ceil(np.linspace(1,1000,num=10)).astype(int)
 #Ms = np.ceil(np.logspace(np.log10(200),np.log10(1000),num=10)).astype(int)
 #reps = 100
 reps = 10
@@ -45,8 +47,8 @@ mb_size = 256
 verbose = True
 
 ## M2 specific
-get_D = lambda M: int(np.ceil(np.sqrt(M)))
-#get_D = lambda M: 5
+#get_D = lambda M: int(np.ceil(np.sqrt(M)))
+get_D = lambda M: 5
 #get_D = lambda M: 10
 #get_D = lambda M: 3
 #get_D = lambda M: 2
@@ -59,8 +61,7 @@ if test:
     reps = 2
     max_iters = 100
 
-#methods = ['torch_vanil','torch_rkhs']
-methods = ['torch_rkhs','torch_vanil']
+methods = ['torch_vanil','torch_rkhs']
 
 #colors = {'hens':'blue','four':'green','m2':'orange'}
 colors = {'torch_vanil':'blue','torch_rkhs':'green'}

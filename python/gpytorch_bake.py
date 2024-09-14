@@ -44,7 +44,8 @@ manual = False
 #manual = True
 
 #init_style = 'runif'
-init_style = 'vanil'
+#init_style = 'vanil'
+init_style = 'mean'
 
 if manual:
     if len(sys.argv)>1:
@@ -55,28 +56,11 @@ if manual:
         quit()
     for i in range(10):
         print("manual!")
-    #M = 128
-    #M = 5
-    #M = 10
     M = 50
-    #max_iters = 100
-    max_iters = 4000
     seed = 0
-    #seed = 5
-    #methods = ['hens']
-    #methods = ['sphere']
-    lr = 1e-2
-    debug = True
-    jit = True
-    track = True
-    es_patience = np.inf
 else:
     M = int(sys.argv[1])
     seed = int(sys.argv[2])
-    debug = False
-    jit = True
-    track = False
-    es_patience = None
 
 sim_id = str(M)+'_'+str(seed)
 
@@ -143,13 +127,8 @@ tpis = []
 costs = []
 for method in methods:
     print(method)
-    if method=='four':
-        print("I think this is still ours.")
-        #mod = FFGP(X, y, M, jit = jit, es_patience = 10000)
-        #print("Biggest boi")
-        mod = FFGP(X, y, M, jit = jit, es_patience = es_patience)
-        Knm = mod.get_Knm(X, mod.params)
-        print(np.max(np.abs(Knm)))
+    if False:
+        pass
     elif method=='sphere':
         key = jax.random.PRNGKey(42)
 
@@ -192,7 +171,7 @@ for method in methods:
                 variational_strategy = VariationalStrategy(self, inducing_points, variational_distribution, learn_inducing_locations=True, rkhs = rkhs)
                 super(GPModel, self).__init__(variational_strategy)
                 self.mean_module = gpytorch.means.ConstantMean()
-                self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())
+                self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel(ard_num_dims=P))
 
             def forward(self, x):
                 mean_x = self.mean_module(x)
@@ -208,9 +187,14 @@ for method in methods:
             if init_style=='runif':
                 basis_vectors = torch.rand([D,M,P])
                 basis_coefs = torch.randn([D,M,1])
-            elif init_style=='vanil':
+            elif init_style in ['vanil','mean']:
                 basis_vectors = torch.stack([train_x[np.random.choice(train_x.shape[0], M, replace=False),:] for _ in range(D)])
-                basis_coefs = torch.stack([torch.ones(M)]+[torch.zeros(M) for _ in range(D-1)]).unsqueeze(-1)
+                if init_style=='vanil':
+                    basis_coefs = torch.stack([torch.ones(M)]+[torch.zeros(M) for _ in range(D-1)]).unsqueeze(-1)
+                elif init_style == 'mean':
+                    basis_coefs = 1/D*torch.ones([D,M,1])
+                else:
+                    raise Exception("Oh no.")
             else:
                 raise Exception('Unknown init for RKHS mode.')
             inducing_points = torch.concat([basis_vectors,basis_coefs], axis = 2)
@@ -224,7 +208,7 @@ for method in methods:
 
         if problem=='syn_sine':
             ls_init = -P
-        elif problem=='kin40k':
+        elif problem in ['kin40k','keggu']:
             ls_init = np.log(1.)
         else:
             raise Exception("Kernel initialization ont defined.")
@@ -304,9 +288,26 @@ for mi,method in enumerate(methods):
     #ax = plt.gca()
     #ax1 = ax.twinx()
     #ax1.plot(100*np.arange(len(mse_ess[mi])),mse_ess[mi], color = 'green')
+
 plt.tight_layout()
 plt.savefig(fname)
 plt.close()
+
+fig = plt.figure()
+plt.plot()
+for p in model.named_parameters():
+    print(p)
+
+G = model.variational_strategy.inducing_points[:,:,:-1]
+A = model.variational_strategy.inducing_points[:,:,-1]
+
+## Is the first row of A still big relative to the other rows?
+fig = plt.figure()
+plt.title("Coefficient vectors.")
+plt.boxplot([A[0,:].detach().cpu().numpy(), A[1:,:].flatten().detach().cpu().numpy()])
+plt.savefig("temp.png")
+plt.close()
+
 
 ## Save simulation results.
 print(mses)
@@ -321,4 +322,5 @@ else:
     df = pd.DataFrame(dat)
     df.columns = ['Method','MSE','Time', 'TPI', 'M', 'seed']
     df.to_csv(simdir+'/'+sim_id+'.csv')
+
 

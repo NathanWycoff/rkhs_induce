@@ -36,12 +36,20 @@ from gpytorch.variational import VariationalStrategy
 print("Post import")
 
 #config.update("jax_enable_x64", True)
-
-
 exec(open("python/sim_settings.py").read())
 
 manual = False
 #manual = True
+
+if precision=='64':
+    torch_dt = torch.float64
+elif precision=='32':
+    torch_dt = torch.float64
+elif precision=='16':
+    torch_dt = torch.float16
+else:
+    raise Exception("Precision not supported.")
+torch.set_default_dtype(torch_dt)
 
 #init_style = 'runif'
 #init_style = 'vanil'
@@ -129,34 +137,6 @@ for method in methods:
     print(method)
     if False:
         pass
-    elif method=='sphere':
-        key = jax.random.PRNGKey(42)
-
-        NUM_FREQUENCIES = 7
-        PHASE_TRUNCATION = 30
-        k = NTK(depth=5)
-        sh = SphericalHarmonics(num_frequencies=NUM_FREQUENCIES, phase_truncation=PHASE_TRUNCATION)
-        print("Sphere is using fixed M.")
-        lik = Gaussian()
-        q = VariationalDistributionTriL()
-        m = GP(k)
-        m_new = m.conditional(sh, q)
-        data_dict = {"x": X, "y": y}
-        from datasets import Dataset
-        dataset = Dataset.from_dict(data_dict).with_format("jax", dtype=np.float64)
-        param = m_new.init(
-            key,
-            input_dim=P,
-            num_independent_processes=1,
-            likelihood=lik,
-            sh_features=sh,
-            variational_dist=q,
-        )
-        param = param.set_trainable(collection=k.name, variance=True)
-        train_step = create_training_step(m_new, dataset, ("x", "y"), q, lik)
-        param_new, state, elbos = m_new.fit(param, train_step, optax.adam(lr), max_iters)
-        pred_mu, pred_var = m_new.predict_diag(param_new, XX)
-        yy_hat = pred_mu
     elif 'torch' in method:
         if method=='torch_vanil':
             rkhs = False
@@ -178,10 +158,10 @@ for method in methods:
                 covar_x = self.covar_module(x)
                 return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
 
-        train_x = torch.tensor(X)
-        train_y = torch.tensor(y)
-        test_x = torch.tensor(XX)
-        test_y = torch.tensor(yy)
+        train_x = torch.tensor(X, dtype = torch_dt)
+        train_y = torch.tensor(y, dtype = torch_dt)
+        test_x = torch.tensor(XX, dtype = torch_dt)
+        test_y = torch.tensor(yy, dtype = torch_dt)
 
         if rkhs:
             if init_style=='runif':
@@ -203,15 +183,17 @@ for method in methods:
 
         model = GPModel(inducing_points=inducing_points, rkhs = rkhs)
         likelihood = gpytorch.likelihoods.GaussianLikelihood()
-        model.double()
-        likelihood.double()
+        if precision=='64':
+            model.double()
+            likelihood.double()
+        elif precision=='16':
+            model.half()
+            likelihood.half()
 
         if problem=='syn_sine':
             ls_init = -P
-        elif problem in ['kin40k','keggu']:
-            ls_init = np.log(1.)
         else:
-            raise Exception("Kernel initialization ont defined.")
+            ls_init = np.log(1.)
         model.covar_module.base_kernel.raw_lengthscale = torch.nn.Parameter(ls_init*torch.ones_like(model.covar_module.base_kernel.raw_lengthscale))
 
         if torch.cuda.is_available():
@@ -307,7 +289,6 @@ plt.title("Coefficient vectors.")
 plt.boxplot([A[0,:].detach().cpu().numpy(), A[1:,:].flatten().detach().cpu().numpy()])
 plt.savefig("temp.png")
 plt.close()
-
 
 ## Save simulation results.
 print(mses)

@@ -252,6 +252,7 @@ class VariationalStrategy(_VariationalStrategy):
         # Compute interpolation terms
         # K_ZZ^{-1/2} K_ZX
         # K_ZZ^{-1/2} \mu_Z
+        import IPython; IPython.embed()
         L = self._cholesky_factor(induc_induc_covar)
         if L.shape != induc_induc_covar.shape:
             # Aggressive caching can cause nasty shape incompatibilies when evaluating with different batch shapes

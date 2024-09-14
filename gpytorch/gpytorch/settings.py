@@ -394,6 +394,7 @@ class variational_cholesky_jitter(_dtype_value_context):
     - Default for `double`: 1e-6
     """
 
+    _global_half_value = 1e-3
     _global_float_value = 1e-4
     _global_double_value = 1e-6
 

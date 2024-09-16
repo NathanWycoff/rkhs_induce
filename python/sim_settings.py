@@ -53,21 +53,14 @@ verbose = True
 
 #init_style = 'runif'
 #init_style = 'vanil'
-init_style = 'mean'
-#init_style = 'samp_rand'
+#init_style = 'mean'
+init_style = 'samp_rand'
+#init_style = 'samp_orth'
 
 ## M2 specific
 #get_D = lambda M: int(np.ceil(np.sqrt(M)))
-#get_D = lambda M: 5
-#get_D = lambda M: 1
-#get_D = lambda M: 4
-#get_D = lambda M: 10
-#get_D = lambda M: 8
-#get_D = lambda M: 4
-#get_D = lambda M: 1
-get_D = lambda M: 2
-#get_D = lambda M: 10
-#get_D = lambda M: 20
+#get_D = lambda M: 100
+get_D = lambda M: 4
 #TODO:
 
 if test:
@@ -77,8 +70,9 @@ if test:
     reps = 2
     max_iters = 100
 
-methods = ['torch_vanil','torch_rkhs']
-#methods = ['torch_rkhs']
+#TODO:
+#methods = ['torch_vanil','torch_rkhs']
+methods = ['torch_rkhs']
 #methods = ['torch_vanil']
 
 #colors = {'hens':'blue','four':'green','m2':'orange'}

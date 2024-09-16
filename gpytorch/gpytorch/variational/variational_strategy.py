@@ -189,50 +189,18 @@ class VariationalStrategy(_VariationalStrategy):
     ) -> MultivariateNormal:
         # Compute full prior distribution
         if self.rkhs:
-            #import IPython; IPython.embed()
             D,M,P = inducing_points.shape
             P -= 1 # Last dim is the coefficients (A).
             N = x.shape[0]
 
             A = inducing_points[:,:,-1]
-
-            ## Just for verification purposes.
-            #big_Kuv = torch.zeros([D,M,N]).double()
-            #big_Kuu = torch.zeros([D,D,M,M]).double()
-            #for d in range(D):
-            #    ip = inducing_points[d,:,:-1]
-            #    big_Kuv[d,:,:] = self.model.covar_module.forward(ip, x)
-            #    for dd in range(D):
-            #        ipd = inducing_points[dd,:,:-1]
-            #        big_Kuu[d,dd,:,:] = self.model.covar_module.forward(ip, ipd)
-
-            #i = 3
-            #j = 2
-            #res = 0
-            #for d1 in range(D):
-            #    #res += A[d,i]*big_Kuv[d,i,j]
-            #    for d2 in range(D):
-            #        res += A[d1,i]*A[d2,j]*big_Kuu[d1,d2,i,j]
-
-            #print("lets look into lazy tensors at some point")
-            #big_x = torch.tile(x[None,:,:], [D,1,1])
             ip = inducing_points[:,:,:-1]
-            #big_Kuv = self.model.covar_module.forward(ip, big_x)
-            #big_Kuv = self.model.covar_module(ip, big_x)
-            big_Kuv = self.model.covar_module(ip, x[None,:,:])
 
-            #bip1 = torch.tile(ip[:,None,:,:], [1,D,1,1])
-            #bip2 = torch.tile(ip[None,:,:,:], [D,1,1,1])
-            #big_Kuu = self.model.covar_module.forward(bip1,bip2)
-            #big_Kuu = self.model.covar_module(bip1,bip2)
+            big_Kuv = self.model.covar_module(ip, x[None,:,:])
             big_Kuu = self.model.covar_module(ip[:,None,:,:],ip[None,:,:,:])
 
-            #print("lets look into lazy tensors at some point")
-            A = inducing_points[:,:,-1]
             Kuv = torch.sum(A[:,:,None]*big_Kuv, dim = 0)
-            #Kuv = torch.einsum('ijk,ij->jk', big_Kuv, A)
             Kuu = torch.sum(torch.sum(A[:,None,:,None] * A[None,:,None,:] * big_Kuu, dim=0), dim = 0)
-            #Kuu = torch.einsum('ik,ijkl,jl->kl', A, big_Kuu, A)
 
             ## Package for rest of function.
             test_mean = self.model.mean_module(x)
@@ -247,16 +215,21 @@ class VariationalStrategy(_VariationalStrategy):
 
             # Covariance terms
             num_induc = inducing_points.size(-2)
-            test_mean = full_output.mean[..., num_induc:]
             induc_induc_covar = full_covar[..., :num_induc, :num_induc].add_jitter(self.jitter_val)
             induc_data_covar = full_covar[..., :num_induc, num_induc:].to_dense()
             data_data_covar = full_covar[..., num_induc:, num_induc:]
+            test_mean = full_output.mean[..., num_induc:]
+
 
         # Compute interpolation terms
         # K_ZZ^{-1/2} K_ZX
         # K_ZZ^{-1/2} \mu_Z
         #import IPython; IPython.embed()
-        L = self._cholesky_factor(induc_induc_covar)
+        #import IPython; IPython.embed()
+        try:
+            L = self._cholesky_factor(induc_induc_covar)
+        except Exception as e:
+            import IPython; IPython.embed()
         if L.shape != induc_induc_covar.shape:
             # Aggressive caching can cause nasty shape incompatibilies when evaluating with different batch shapes
             # TODO: Use a hook fo this

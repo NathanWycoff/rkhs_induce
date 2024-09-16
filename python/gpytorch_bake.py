@@ -38,6 +38,7 @@ print("Post import")
 #config.update("jax_enable_x64", True)
 exec(open("python/sim_settings.py").read())
 
+#TODO:
 #manual = False
 manual = True
 
@@ -63,10 +64,13 @@ if manual:
         quit()
     for i in range(10):
         print("manual!")
-    M = 50
+    #M = 3
     #M = 500
     #M = 2000
-    #M = 5000
+    #M = 4000
+    M = 2000
+    #M = 500
+    #M = 50
     #M = 10
     seed = 0
 else:
@@ -119,7 +123,7 @@ elif problem in ['year','keggu']:
 else:
     raise Exception("Unknown problem.")
 
-if init_style in ['vanil','mean','samp_rand']:
+if init_style in ['vanil','mean','samp_rand','samp_orth']:
     first_iv = np.random.choice(N,M,replace=False)
 
 ## Rescaling
@@ -172,7 +176,7 @@ for method in methods:
             if init_style=='runif':
                 basis_vectors = torch.rand([D,M,P])
                 basis_coefs = torch.randn([D,M,1])
-            elif init_style in ['vanil','mean','samp_rand']:
+            elif init_style in ['vanil','mean','samp_rand','samp_orth']:
                 #basis_vectors = torch.stack([train_x[np.random.choice(train_x.shape[0], M, replace=False),:] for _ in range(D)])
                 basis_vectors = torch.stack([train_x[first_iv,:]]+[train_x[np.random.choice(train_x.shape[0], M, replace=False),:] for _ in range(D-1)])
                 if init_style=='vanil':
@@ -181,6 +185,53 @@ for method in methods:
                     basis_coefs = 1/D*torch.ones([D,M,1])
                 elif init_style == 'samp_rand':
                     basis_coefs = torch.randn([D,M,1])
+                elif init_style == 'samp_orth':
+                    print("Pre-initing...")
+                    torch.set_default_dtype(torch.float64)
+                    basis_coefs = torch.randn([D,M,1], requires_grad = True, device = 'cuda')
+                    basis_vectors = basis_vectors.double()
+
+                    model = GPModel(inducing_points=basis_vectors[0,:,:], rkhs = False)
+                    Ic = torch.eye(M).cuda()
+                    def init_err(coefs):
+                        big_Kuu = model.covar_module(basis_vectors[:,None,:,:],basis_vectors[None,:,:,:])
+                        Kuu = torch.sum(torch.sum(coefs.squeeze()[:,None,:,None] * coefs.squeeze()[None,:,None,:] * big_Kuu, dim=0), dim = 0)
+                        diff = Kuu - Ic
+                        return (diff*diff).sum()
+
+                    model = model.cuda()
+                    basis_vectors = basis_vectors.cuda()
+
+                    preopt = torch.optim.Adam([ {'params': basis_coefs}, ], lr=lr)
+                    
+                    preits = 1000
+                    precosts = torch.zeros(preits)
+                    for i in tqdm(range(preits)):
+                        preopt.zero_grad()
+                        loss = init_err(basis_coefs)
+                        loss.backward()
+                        precosts[i] = loss.detach()
+                        preopt.step()
+
+                    #fig = plt.figure()
+                    #plt.plot(costs)
+                    #plt.savefig("temp.png")
+                    #plt.close()
+
+                    print("done.")
+                    torch.set_default_dtype(torch_dt)
+
+                    if precision=='64':
+                        basis_coefs = basis_coefs.double()
+                        basis_vectors = basis_vectors.double()
+                    elif precision=='32':
+                        basis_coefs = basis_coefs.single()
+                        basis_vectors = basis_vectors.single()
+                    elif precision=='16':
+                        basis_coefs = basis_coefs.half()
+                        basis_vectors = basis_vectors.half()
+                    else:
+                        raise Exception("Precision not supported.")
                 else:
                     raise Exception("Oh no.")
             else:
@@ -203,6 +254,8 @@ for method in methods:
             ls_init = -P
         else:
             ls_init = np.log(1.)
+        if ls_init!=0. and init_style=='samp_orth':
+            assert False
         model.covar_module.base_kernel.raw_lengthscale = torch.nn.Parameter(ls_init*torch.ones_like(model.covar_module.base_kernel.raw_lengthscale))
 
         if torch.cuda.is_available():

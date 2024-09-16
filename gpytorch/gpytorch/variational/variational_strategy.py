@@ -189,6 +189,7 @@ class VariationalStrategy(_VariationalStrategy):
     ) -> MultivariateNormal:
         # Compute full prior distribution
         if self.rkhs:
+            #import IPython; IPython.embed()
             D,M,P = inducing_points.shape
             P -= 1 # Last dim is the coefficients (A).
             N = x.shape[0]
@@ -214,15 +215,17 @@ class VariationalStrategy(_VariationalStrategy):
             #        res += A[d1,i]*A[d2,j]*big_Kuu[d1,d2,i,j]
 
             #print("lets look into lazy tensors at some point")
-            big_x = torch.tile(x[None,:,:], [D,1,1])
+            #big_x = torch.tile(x[None,:,:], [D,1,1])
             ip = inducing_points[:,:,:-1]
             #big_Kuv = self.model.covar_module.forward(ip, big_x)
-            big_Kuv = self.model.covar_module(ip, big_x)
+            #big_Kuv = self.model.covar_module(ip, big_x)
+            big_Kuv = self.model.covar_module(ip, x[None,:,:])
 
-            bip1 = torch.tile(ip[:,None,:,:], [1,D,1,1])
-            bip2 = torch.tile(ip[None,:,:,:], [D,1,1,1])
+            #bip1 = torch.tile(ip[:,None,:,:], [1,D,1,1])
+            #bip2 = torch.tile(ip[None,:,:,:], [D,1,1,1])
             #big_Kuu = self.model.covar_module.forward(bip1,bip2)
-            big_Kuu = self.model.covar_module(bip1,bip2)
+            #big_Kuu = self.model.covar_module(bip1,bip2)
+            big_Kuu = self.model.covar_module(ip[:,None,:,:],ip[None,:,:,:])
 
             #print("lets look into lazy tensors at some point")
             A = inducing_points[:,:,-1]
@@ -233,7 +236,7 @@ class VariationalStrategy(_VariationalStrategy):
 
             ## Package for rest of function.
             test_mean = self.model.mean_module(x)
-            induc_induc_covar = Kuu
+            induc_induc_covar = Kuu.add_jitter(self.jitter_val)
             induc_data_covar = Kuv.to_dense()
             data_data_covar = self.model.covar_module(x)
 
@@ -252,7 +255,7 @@ class VariationalStrategy(_VariationalStrategy):
         # Compute interpolation terms
         # K_ZZ^{-1/2} K_ZX
         # K_ZZ^{-1/2} \mu_Z
-        import IPython; IPython.embed()
+        #import IPython; IPython.embed()
         L = self._cholesky_factor(induc_induc_covar)
         if L.shape != induc_induc_covar.shape:
             # Aggressive caching can cause nasty shape incompatibilies when evaluating with different batch shapes

@@ -38,22 +38,21 @@ print("Post import")
 #config.update("jax_enable_x64", True)
 exec(open("python/sim_settings.py").read())
 
-manual = False
-#manual = True
+#manual = False
+manual = True
 
 if precision=='64':
     torch_dt = torch.float64
+    adam_eps = 1e-8
 elif precision=='32':
     torch_dt = torch.float64
+    adam_eps = 1e-6
 elif precision=='16':
     torch_dt = torch.float16
+    adam_eps = 1e-4
 else:
     raise Exception("Precision not supported.")
 torch.set_default_dtype(torch_dt)
-
-#init_style = 'runif'
-#init_style = 'vanil'
-init_style = 'mean'
 
 if manual:
     if len(sys.argv)>1:
@@ -65,6 +64,10 @@ if manual:
     for i in range(10):
         print("manual!")
     M = 50
+    #M = 500
+    #M = 2000
+    #M = 5000
+    #M = 10
     seed = 0
 else:
     M = int(sys.argv[1])
@@ -116,6 +119,8 @@ elif problem in ['year','keggu']:
 else:
     raise Exception("Unknown problem.")
 
+if init_style in ['vanil','mean','samp_rand']:
+    first_iv = np.random.choice(N,M,replace=False)
 
 ## Rescaling
 mu_y = np.mean(y)
@@ -167,19 +172,23 @@ for method in methods:
             if init_style=='runif':
                 basis_vectors = torch.rand([D,M,P])
                 basis_coefs = torch.randn([D,M,1])
-            elif init_style in ['vanil','mean']:
-                basis_vectors = torch.stack([train_x[np.random.choice(train_x.shape[0], M, replace=False),:] for _ in range(D)])
+            elif init_style in ['vanil','mean','samp_rand']:
+                #basis_vectors = torch.stack([train_x[np.random.choice(train_x.shape[0], M, replace=False),:] for _ in range(D)])
+                basis_vectors = torch.stack([train_x[first_iv,:]]+[train_x[np.random.choice(train_x.shape[0], M, replace=False),:] for _ in range(D-1)])
                 if init_style=='vanil':
                     basis_coefs = torch.stack([torch.ones(M)]+[torch.zeros(M) for _ in range(D-1)]).unsqueeze(-1)
                 elif init_style == 'mean':
                     basis_coefs = 1/D*torch.ones([D,M,1])
+                elif init_style == 'samp_rand':
+                    basis_coefs = torch.randn([D,M,1])
                 else:
                     raise Exception("Oh no.")
             else:
                 raise Exception('Unknown init for RKHS mode.')
             inducing_points = torch.concat([basis_vectors,basis_coefs], axis = 2)
         else:
-            inducing_points = train_x[np.random.choice(train_x.shape[0],M,replace=False), :]
+            #inducing_points = train_x[np.random.choice(train_x.shape[0],M,replace=False), :]
+            inducing_points = train_x[first_iv, :]
 
         model = GPModel(inducing_points=inducing_points, rkhs = rkhs)
         likelihood = gpytorch.likelihoods.GaussianLikelihood()
@@ -216,7 +225,8 @@ for method in methods:
         optimizer = torch.optim.Adam([
             {'params': model.parameters()},
             {'params': likelihood.parameters()},
-        ], lr=lr)
+        ], lr=lr, eps = 1e-2)
+        #], lr=lr, eps = adam_eps)
 
         # Our loss object. We're using the VariationalELBO
         mll = gpytorch.mlls.VariationalELBO(likelihood, model, num_data=train_y.size(0))
@@ -277,18 +287,19 @@ plt.close()
 
 fig = plt.figure()
 plt.plot()
-for p in model.named_parameters():
-    print(p)
 
-G = model.variational_strategy.inducing_points[:,:,:-1]
-A = model.variational_strategy.inducing_points[:,:,-1]
-
-## Is the first row of A still big relative to the other rows?
-fig = plt.figure()
-plt.title("Coefficient vectors.")
-plt.boxplot([A[0,:].detach().cpu().numpy(), A[1:,:].flatten().detach().cpu().numpy()])
-plt.savefig("temp.png")
-plt.close()
+##for p in model.named_parameters():
+##    print(p)
+#
+#G = model.variational_strategy.inducing_points[:,:,:-1]
+#A = model.variational_strategy.inducing_points[:,:,-1]
+#
+### Is the first row of A still big relative to the other rows?
+#fig = plt.figure()
+#plt.title("Coefficient vectors.")
+#plt.boxplot([A[0,:].detach().cpu().numpy(), A[1:,:].flatten().detach().cpu().numpy()])
+#plt.savefig("temp.png")
+#plt.close()
 
 ## Save simulation results.
 print(mses)

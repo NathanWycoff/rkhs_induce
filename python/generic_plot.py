@@ -45,19 +45,25 @@ plt.savefig(problem+"_marg.png")
 plt.close()
 
 alpha = 0.2
-for tt in ['Time','TPI']:
-    fname = problem+'_paretto_'+tt+'.png'
-    fig = plt.figure()
-    for meth in methods:
-        plt.scatter(rdf.loc[meth,'MSE'], rdf.loc[meth,tt], label = meth, color = colors[meth])
-        plt.plot(rdf.loc[meth,'MSE'], rdf.loc[meth,tt], color = colors[meth])
-        mse = df.loc[df['Method']==meth,'MSE']
-        time = df.loc[df['Method']==meth,tt]
-        plt.scatter(mse, time, color = colors[meth], alpha = alpha)
+for tt1 in ['Time','TPI']:
+    for tt2 in ['MSE','NLL']:
+        fname = problem+'_'+tt1+'_'+tt2+'.png'
+        fig = plt.figure()
+        for meth in methods:
+            plt.scatter(rdf.loc[meth,tt2], rdf.loc[meth,tt1], label = meth, color = colors[meth])
+            plt.plot(rdf.loc[meth,tt2], rdf.loc[meth,tt1], color = colors[meth])
+            mse = df.loc[df['Method']==meth,tt2]
+            time = df.loc[df['Method']==meth,tt1]
+            plt.scatter(mse, time, color = colors[meth], alpha = alpha)
 
-    plt.xlabel("logMSE")
-    plt.ylabel(tt+" (s)")
-    plt.legend()
-    plt.savefig(fname)
-    plt.close()
+        if tt2=='MSE':
+            plt.xlabel("logMSE")
+        elif tt2=='NLL':
+            plt.xlabel("NLL")
+        else:
+            raise Exception()
+        plt.ylabel(tt1+" (s)")
+        plt.legend()
+        plt.savefig(fname)
+        plt.close()
 

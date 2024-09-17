@@ -38,9 +38,8 @@ print("Post import")
 #config.update("jax_enable_x64", True)
 exec(open("python/sim_settings.py").read())
 
-#TODO:
-#manual = False
-manual = True
+manual = False
+#manual = True
 
 if precision=='64':
     torch_dt = torch.float64
@@ -68,7 +67,12 @@ if manual:
     #M = 500
     #M = 2000
     #M = 4000
-    M = 2000
+    #M = 2000
+    #M = 25
+    #M = 50
+    M = 100
+    #M = 500
+    #M = 100
     #M = 500
     #M = 50
     #M = 10
@@ -102,14 +106,20 @@ if problem=='syn_sine':
 elif problem in ['kin40k']:
     with open(datdir+'/'+problem+'.pkl','rb') as f:
         X, y, XX, yy = pickle.load(f)
-    N,P = X.shape
-    assert N == len(y)
-    NN = XX.shape[0]
-    assert NN == len(yy)
-    assert P==XX.shape[1]
+    X_all = np.concatenate([X,XX], axis = 0)
+    y_all = np.concatenate([y,yy], axis = 0)
+    #N,P = X.shape
+    #assert N == len(y)
+    #NN = XX.shape[0]
+    #assert NN == len(yy)
+    #assert P==XX.shape[1]
 elif problem in ['year','keggu']:
     with open(datdir+'/'+problem+'.pkl','rb') as f:
         X_all, y_all = pickle.load(f)
+else:
+    raise Exception("Unknown problem.")
+
+if problem in ['kin40k','year','keggu']:
     p_out = 0.1
     NN = int(np.ceil(X_all.shape[0]*p_out))
     N = X_all.shape[0] - NN
@@ -120,8 +130,6 @@ elif problem in ['year','keggu']:
     y = y_all[ind_train]
     XX = X_all[ind_test,:]
     yy = y_all[ind_test]
-else:
-    raise Exception("Unknown problem.")
 
 if init_style in ['vanil','mean','samp_rand','samp_orth']:
     first_iv = np.random.choice(N,M,replace=False)
@@ -139,6 +147,7 @@ X = (X-min_X[np.newaxis,:]) / (max_X-min_X)[np.newaxis,:]
 XX = (XX-min_X[np.newaxis,:]) / (max_X-min_X)[np.newaxis,:]
 
 mses = []
+nlls = []
 tds = []
 tpis = []
 costs = []
@@ -187,7 +196,7 @@ for method in methods:
                     basis_coefs = torch.randn([D,M,1])
                 elif init_style == 'samp_orth':
                     print("Pre-initing...")
-                    torch.set_default_dtype(torch.float64)
+                    #torch.set_default_dtype(torch.float64)
                     basis_coefs = torch.randn([D,M,1], requires_grad = True, device = 'cuda')
                     basis_vectors = basis_vectors.double()
 
@@ -196,6 +205,8 @@ for method in methods:
                     def init_err(coefs):
                         big_Kuu = model.covar_module(basis_vectors[:,None,:,:],basis_vectors[None,:,:,:])
                         Kuu = torch.sum(torch.sum(coefs.squeeze()[:,None,:,None] * coefs.squeeze()[None,:,None,:] * big_Kuu, dim=0), dim = 0)
+                        #coefs.squeeze().shape
+                        #Kuu = Kuu.to_dense()
                         diff = Kuu - Ic
                         return (diff*diff).sum()
 
@@ -311,6 +322,10 @@ for method in methods:
         likelihood.eval()
         #yy_hat = model(test_x).mean.detach().numpy()
         yy_hat = model(test_x).mean.cpu().detach().numpy()
+        if precision != '16':
+            nll = -model(test_x).log_prob(test_y).cpu().detach().numpy()
+        else:
+            nll = np.nan
     else:
         raise Exception("Unknown method!")
 
@@ -318,6 +333,7 @@ for method in methods:
     mse = np.mean(np.square(yy_hat-yy))
 
     mses.append(mse)
+    nlls.append(mse)
     tds.append(td)
     tpis.append(tpi)
 
@@ -356,6 +372,7 @@ plt.plot()
 
 ## Save simulation results.
 print(mses)
+print(nlls)
 if manual:
     for i in range(10):
         print("manual!")
@@ -363,9 +380,9 @@ else:
     #df = pd.DataFrame([['hen',mse, td, tpi, M, seed], ['m2',mse2, td2, tpi2, M, seed]])
     dat = []
     for mi,meth in enumerate(methods):
-        dat.append([meth,mses[mi], tds[mi], tpis[mi], M, seed])
+        dat.append([meth,mses[mi], nlls[mi], tds[mi], tpis[mi], M, seed])
     df = pd.DataFrame(dat)
-    df.columns = ['Method','MSE','Time', 'TPI', 'M', 'seed']
+    df.columns = ['Method','MSE','NLL','Time', 'TPI', 'M', 'seed']
     df.to_csv(simdir+'/'+sim_id+'.csv')
 
 

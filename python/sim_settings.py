@@ -35,7 +35,10 @@ datdir = 'pickles'
 #Ms = np.ceil(np.logspace(0,np.log10(500),num=20)).astype(int)
 #Ms = np.ceil(np.logspace(0,np.log10(500),num=10)).astype(int)
 #Ms = np.ceil(np.linspace(1,500,num=10)).astype(int)
-Ms = np.ceil(np.linspace(50,500,num=10)).astype(int)
+#Ms = np.ceil(np.linspace(50,500,num=10)).astype(int)
+#Ms = np.ceil(np.linspace(50,5000,num=20)).astype(int)
+#Ms = np.ceil(np.linspace(50,500,num=10)).astype(int)
+Ms = np.ceil(np.linspace(50,1000,num=20)).astype(int)
 #Ms = np.ceil(np.linspace(50,200,num=10)).astype(int)
 #reps = 100
 reps = 10
@@ -43,25 +46,29 @@ reps = 10
 ## Optimization params
 #lr = 1e-3
 max_iters = 4000
+#max_iters = 1000
+#max_iters = 8000
 #max_iters = 500
+#lr = 1e-2
 lr = 1e-2
-mb_size = 256
-#mb_size = 128
+mb_size = 256 #mb_size = 128
+#mb_size = 2048
 #mb_size = 64
 #mb_size = 32
 verbose = True
 
 #init_style = 'runif'
 #init_style = 'vanil'
-#init_style = 'mean'
-init_style = 'samp_rand'
+init_style = 'mean'
+#init_style = 'samp_rand'
 #init_style = 'samp_orth'
 
 ## M2 specific
 #get_D = lambda M: int(np.ceil(np.sqrt(M)))
 #get_D = lambda M: 100
-get_D = lambda M: 4
-#TODO:
+#get_D = lambda M: 4
+get_D = lambda M: 2
+#get_D = lambda M: 10
 
 if test:
     for i in range(20):
@@ -70,9 +77,8 @@ if test:
     reps = 2
     max_iters = 100
 
-#TODO:
-#methods = ['torch_vanil','torch_rkhs']
-methods = ['torch_rkhs']
+methods = ['torch_vanil','torch_rkhs']
+#methods = ['torch_rkhs']
 #methods = ['torch_vanil']
 
 #colors = {'hens':'blue','four':'green','m2':'orange'}

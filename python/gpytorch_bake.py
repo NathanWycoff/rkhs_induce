@@ -45,7 +45,7 @@ if precision=='64':
     torch_dt = torch.float64
     adam_eps = 1e-8
 elif precision=='32':
-    torch_dt = torch.float64
+    torch_dt = torch.float32
     adam_eps = 1e-6
 elif precision=='16':
     torch_dt = torch.float16
@@ -63,19 +63,7 @@ if manual:
         quit()
     for i in range(10):
         print("manual!")
-    #M = 3
-    #M = 500
-    #M = 2000
-    #M = 4000
-    #M = 2000
-    #M = 25
-    #M = 50
     M = 100
-    #M = 500
-    #M = 100
-    #M = 500
-    #M = 50
-    #M = 10
     seed = 0
 else:
     M = int(sys.argv[1])
@@ -91,8 +79,6 @@ np.random.seed(seed)
 print('-----')
 print(methods)
 print('-----')
-
-D = get_D(M)
 
 if problem=='syn_sine':
     P = 2
@@ -131,7 +117,7 @@ if problem in ['kin40k','year','keggu']:
     XX = X_all[ind_test,:]
     yy = y_all[ind_test]
 
-if init_style in ['vanil','mean','samp_rand','samp_orth']:
+if init_style in ['vanil','mean','samp_rand','samp_orth','samp_inv']:
     first_iv = np.random.choice(N,M,replace=False)
 
 ## Rescaling
@@ -158,8 +144,15 @@ for method in methods:
     elif 'torch' in method:
         if method=='torch_vanil':
             rkhs = False
-        elif method=='torch_rkhs':
+        elif 'rkhs' in method:
             rkhs = True
+            D_style = method.split('_')[-1]
+            if D_style.isnumeric():
+                D = int(D_style)
+            elif D_style=='sqrtM':
+                D = int(np.ceil(np.sqrt(M)))
+            else:
+                raise Exception("Unknown D strategy.")
         else:
             raise Exception("Unknown torch method '" + method + "'")
 
@@ -185,7 +178,7 @@ for method in methods:
             if init_style=='runif':
                 basis_vectors = torch.rand([D,M,P])
                 basis_coefs = torch.randn([D,M,1])
-            elif init_style in ['vanil','mean','samp_rand','samp_orth']:
+            elif init_style in ['vanil','mean','samp_rand','samp_orth','samp_inv']:
                 #basis_vectors = torch.stack([train_x[np.random.choice(train_x.shape[0], M, replace=False),:] for _ in range(D)])
                 basis_vectors = torch.stack([train_x[first_iv,:]]+[train_x[np.random.choice(train_x.shape[0], M, replace=False),:] for _ in range(D-1)])
                 if init_style=='vanil':
@@ -232,6 +225,7 @@ for method in methods:
                     print("done.")
                     torch.set_default_dtype(torch_dt)
 
+                    print("Don't need to assign?")
                     if precision=='64':
                         basis_coefs = basis_coefs.double()
                         basis_vectors = basis_vectors.double()
@@ -243,6 +237,14 @@ for method in methods:
                         basis_vectors = basis_vectors.half()
                     else:
                         raise Exception("Precision not supported.")
+                elif init_style=='samp_inv':
+                    model = GPModel(inducing_points=basis_vectors[0,:,:], rkhs = False)
+                    big_Kuu = model.covar_module(basis_vectors[:,None,:,:],basis_vectors[None,:,:,:])
+                    big_Kuu.shape
+                    KD = torch.diagonal(big_Kuu).transpose(0,2)
+                    L = model.variational_strategy._cholesky_factor(KD)
+                    COEFS = L.solve(torch.randn([M,D,1]))
+                    basis_coefs = COEFS.transpose(0,1)
                 else:
                     raise Exception("Oh no.")
             else:
@@ -257,6 +259,9 @@ for method in methods:
         if precision=='64':
             model.double()
             likelihood.double()
+        #elif precision=='32':
+        #    model.single()
+        #    likelihood.single()
         elif precision=='16':
             model.half()
             likelihood.half()
@@ -333,7 +338,7 @@ for method in methods:
     mse = np.mean(np.square(yy_hat-yy))
 
     mses.append(mse)
-    nlls.append(mse)
+    nlls.append(nll)
     tds.append(td)
     tpis.append(tpi)
 

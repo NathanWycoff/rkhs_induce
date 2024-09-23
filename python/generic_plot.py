@@ -44,6 +44,10 @@ plt.tight_layout()
 plt.savefig(problem+"_marg.png")
 plt.close()
 
+from matplotlib import colormaps as cm
+#colors = dict([(m,cm['spring'](i/(len(methods)-1))) for i,m in enumerate(methods)])
+colors = dict([(m,cm['tab20'](i/(len(methods)-1))) for i,m in enumerate(methods)])
+
 alpha = 0.2
 for tt1 in ['Time','TPI']:
     for tt2 in ['MSE','NLL']:
@@ -55,6 +59,7 @@ for tt1 in ['Time','TPI']:
             mse = df.loc[df['Method']==meth,tt2]
             time = df.loc[df['Method']==meth,tt1]
             plt.scatter(mse, time, color = colors[meth], alpha = alpha)
+        plt.yscale('log')
 
         if tt2=='MSE':
             plt.xlabel("logMSE")

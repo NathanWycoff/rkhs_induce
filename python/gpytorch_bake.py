@@ -117,8 +117,7 @@ if problem in ['kin40k','year','keggu']:
     XX = X_all[ind_test,:]
     yy = y_all[ind_test]
 
-if init_style in ['vanil','mean','samp_rand','samp_orth','samp_inv']:
-    first_iv = np.random.choice(N,M,replace=False)
+first_iv = np.random.choice(N,M,replace=False)
 
 ## Rescaling
 mu_y = np.mean(y)
@@ -143,23 +142,16 @@ for method in methods:
         pass
     elif 'torch' in method:
         if method=='torch_vanil':
-            rkhs = False
-        elif 'rkhs' in method:
-            rkhs = True
-            D_style = method.split('_')[-1]
-            if D_style.isnumeric():
-                D = int(D_style)
-            elif D_style=='sqrtM':
-                D = int(np.ceil(np.sqrt(M)))
-            else:
-                raise Exception("Unknown D strategy.")
+            hetero = False
+        elif 'hetero' in method:
+            hetero = True
         else:
             raise Exception("Unknown torch method '" + method + "'")
 
         class GPModel(ApproximateGP):
-            def __init__(self, inducing_points, rkhs):
-                variational_distribution = CholeskyVariationalDistribution(inducing_points.size(-2))
-                variational_strategy = VariationalStrategy(self, inducing_points, variational_distribution, learn_inducing_locations=True, rkhs = rkhs)
+            def __init__(self, inducing_points, hetero):
+                variational_distribution = CholeskyVariationalDistribution(M)
+                variational_strategy = VariationalStrategy(self, inducing_points, variational_distribution, learn_inducing_locations=True, hetero = hetero)
                 super(GPModel, self).__init__(variational_strategy)
                 self.mean_module = gpytorch.means.ConstantMean()
                 self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel(ard_num_dims=P))
@@ -174,87 +166,13 @@ for method in methods:
         test_x = torch.tensor(XX, dtype = torch_dt)
         test_y = torch.tensor(yy, dtype = torch_dt)
 
-        if rkhs:
-            if init_style=='runif':
-                basis_vectors = torch.rand([D,M,P])
-                basis_coefs = torch.randn([D,M,1])
-            elif init_style in ['vanil','mean','samp_rand','samp_orth','samp_inv']:
-                #basis_vectors = torch.stack([train_x[np.random.choice(train_x.shape[0], M, replace=False),:] for _ in range(D)])
-                basis_vectors = torch.stack([train_x[first_iv,:]]+[train_x[np.random.choice(train_x.shape[0], M, replace=False),:] for _ in range(D-1)])
-                if init_style=='vanil':
-                    basis_coefs = torch.stack([torch.ones(M)]+[torch.zeros(M) for _ in range(D-1)]).unsqueeze(-1)
-                elif init_style == 'mean':
-                    basis_coefs = 1/D*torch.ones([D,M,1])
-                elif init_style == 'samp_rand':
-                    basis_coefs = torch.randn([D,M,1])
-                elif init_style == 'samp_orth':
-                    print("Pre-initing...")
-                    #torch.set_default_dtype(torch.float64)
-                    basis_coefs = torch.randn([D,M,1], requires_grad = True, device = 'cuda')
-                    basis_vectors = basis_vectors.double()
+        inducing_points = train_x[first_iv, :]
+        if hetero:
+            # Under mapping x->(1/2+exp(x))*ls this initializes to the vanilla boi.
+            ls_scale = torch.ones([M,P])*np.log(1/2)
+            inducing_points = torch.stack([inducing_points,ls_scale], dim=-1)
 
-                    model = GPModel(inducing_points=basis_vectors[0,:,:], rkhs = False)
-                    Ic = torch.eye(M).cuda()
-                    def init_err(coefs):
-                        big_Kuu = model.covar_module(basis_vectors[:,None,:,:],basis_vectors[None,:,:,:])
-                        Kuu = torch.sum(torch.sum(coefs.squeeze()[:,None,:,None] * coefs.squeeze()[None,:,None,:] * big_Kuu, dim=0), dim = 0)
-                        #coefs.squeeze().shape
-                        #Kuu = Kuu.to_dense()
-                        diff = Kuu - Ic
-                        return (diff*diff).sum()
-
-                    model = model.cuda()
-                    basis_vectors = basis_vectors.cuda()
-
-                    preopt = torch.optim.Adam([ {'params': basis_coefs}, ], lr=lr)
-                    
-                    preits = 1000
-                    precosts = torch.zeros(preits)
-                    for i in tqdm(range(preits)):
-                        preopt.zero_grad()
-                        loss = init_err(basis_coefs)
-                        loss.backward()
-                        precosts[i] = loss.detach()
-                        preopt.step()
-
-                    #fig = plt.figure()
-                    #plt.plot(costs)
-                    #plt.savefig("temp.png")
-                    #plt.close()
-
-                    print("done.")
-                    torch.set_default_dtype(torch_dt)
-
-                    print("Don't need to assign?")
-                    if precision=='64':
-                        basis_coefs = basis_coefs.double()
-                        basis_vectors = basis_vectors.double()
-                    elif precision=='32':
-                        basis_coefs = basis_coefs.single()
-                        basis_vectors = basis_vectors.single()
-                    elif precision=='16':
-                        basis_coefs = basis_coefs.half()
-                        basis_vectors = basis_vectors.half()
-                    else:
-                        raise Exception("Precision not supported.")
-                elif init_style=='samp_inv':
-                    model = GPModel(inducing_points=basis_vectors[0,:,:], rkhs = False)
-                    big_Kuu = model.covar_module(basis_vectors[:,None,:,:],basis_vectors[None,:,:,:])
-                    big_Kuu.shape
-                    KD = torch.diagonal(big_Kuu).transpose(0,2)
-                    L = model.variational_strategy._cholesky_factor(KD)
-                    COEFS = L.solve(torch.randn([M,D,1]))
-                    basis_coefs = COEFS.transpose(0,1)
-                else:
-                    raise Exception("Oh no.")
-            else:
-                raise Exception('Unknown init for RKHS mode.')
-            inducing_points = torch.concat([basis_vectors,basis_coefs], axis = 2)
-        else:
-            #inducing_points = train_x[np.random.choice(train_x.shape[0],M,replace=False), :]
-            inducing_points = train_x[first_iv, :]
-
-        model = GPModel(inducing_points=inducing_points, rkhs = rkhs)
+        model = GPModel(inducing_points=inducing_points, hetero = hetero)
         likelihood = gpytorch.likelihoods.GaussianLikelihood()
         if precision=='64':
             model.double()

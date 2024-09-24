@@ -1,4 +1,3 @@
-
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 #  vax_vigp_bakeoff.py Author "Nathan Wycoff <nathanbrwycoff@gmail.com>" Date 12.24.2023
@@ -31,7 +30,8 @@ from gpytorch.likelihoods import GaussianLikelihood
 #exec(open("python/jax_vsgp_lib.py").read())
 exec(open("python/sim_settings.py").read())
 
-deep = True
+#deep = True
+deep = False
 
 for i in range(10):
     print("manual!")
@@ -50,11 +50,11 @@ jit = True
 track = True
 es_patience = np.inf
 
-rkhs = False
+hetero = True
 
 np.random.seed(123)
 
-D = get_D(M)
+#D = get_D(M)
 
 if problem=='syn_sine':
     P = 2
@@ -200,12 +200,12 @@ class DeepGP(DeepGP):
         return torch.cat(mus, dim=-1), torch.cat(variances, dim=-1), torch.cat(lls, dim=-1)
 
 class GPModel(ApproximateGP):
-    def __init__(self, inducing_points, rkhs):
-        variational_distribution = CholeskyVariationalDistribution(inducing_points.size(-2))
-        variational_strategy = VariationalStrategy(self, inducing_points, variational_distribution, learn_inducing_locations=True, rkhs = rkhs)
+    def __init__(self, inducing_points, hetero):
+        variational_distribution = CholeskyVariationalDistribution(M)
+        variational_strategy = VariationalStrategy(self, inducing_points, variational_distribution, learn_inducing_locations=True, hetero = hetero)
         super(GPModel, self).__init__(variational_strategy)
         self.mean_module = gpytorch.means.ConstantMean()
-        self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel())
+        self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel(ard_num_dims=P))
 
     def forward(self, x):
         mean_x = self.mean_module(x)
@@ -222,18 +222,18 @@ test_dataset = TensorDataset(test_x, test_y)
 test_loader = DataLoader(test_dataset, batch_size=mb_size, shuffle=True)
 
 #inducing_points = train_x[:M, :]
-if rkhs:
-    basis_vectors = torch.rand([D,M,P])
-    basis_coefs = torch.rand([D,M,1])
-    inducing_points = torch.concat([basis_vectors,basis_coefs], axis = 2)
-else:
-    inducing_points = train_x[np.random.choice(train_x.shape[0],M), :]
+inducing_points = train_x[np.random.choice(train_x.shape[0],M), :]
+if hetero:
+    # Under mapping x->(1/2+exp(x))*ls this initializes to the vanilla boi.
+    ls_scale = torch.ones([M,P])*np.log(1/2)
+    #inducing_points = torch.concat([inducing_points,ls_scale], axis = 1)
+    inducing_points = torch.stack([inducing_points,ls_scale], dim=-1)
 
 
 if deep:
     model = DeepGP(train_x.shape)
 else:
-    model = GPModel(inducing_points=inducing_points, rkhs = rkhs)
+    model = GPModel(inducing_points=inducing_points, hetero = hetero)
 likelihood = gpytorch.likelihoods.GaussianLikelihood()
 model.double()
 likelihood.double()
@@ -283,7 +283,7 @@ for i in epochs_iter:
         loss.backward()
         optimizer.step()
         costs.append(loss.detach().numpy())
-        lengthscales.append(float(model.covar_module.base_kernel.raw_lengthscale.detach().numpy()))
+        #lengthscales.append(float(model.covar_module.base_kernel.raw_lengthscale.detach().numpy()))
         variances.append(float(model.covar_module.raw_outputscale.detach().numpy()))
 
         yy_hat = model(XX_torch).mean.detach().numpy()

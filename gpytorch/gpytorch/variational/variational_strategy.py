@@ -90,10 +90,10 @@ class VariationalStrategy(_VariationalStrategy):
         variational_distribution: _VariationalDistribution,
         learn_inducing_locations: bool = True,
         jitter_val: Optional[float] = None,
-        rkhs: bool = False,
+        hetero: bool = False,
     ):
         super().__init__(
-            model, inducing_points, variational_distribution, learn_inducing_locations, jitter_val=jitter_val, rkhs=rkhs
+            model, inducing_points, variational_distribution, learn_inducing_locations, jitter_val=jitter_val, hetero=hetero
         )
         self.register_buffer("updated_strategy", torch.tensor(True))
         self._register_load_state_dict_pre_hook(_ensure_updated_strategy_flag_set)
@@ -188,25 +188,47 @@ class VariationalStrategy(_VariationalStrategy):
         **kwargs,
     ) -> MultivariateNormal:
         # Compute full prior distribution
-        if self.rkhs:
-            D,M,P = inducing_points.shape
-            P -= 1 # Last dim is the coefficients (A).
-            N = x.shape[0]
+        if self.hetero:
+            #import IPython; IPython.embed()
+            M,P,_ = inducing_points.shape
+            Z = inducing_points[:,:,0]
+            lss = inducing_points[:,:,1]
 
-            A = inducing_points[:,:,-1]
-            ip = inducing_points[:,:,:-1]
+            a_0 = 1/torch.square(self.model.covar_module.base_kernel.lengthscale)
+            a_z = (0.5+torch.exp(lss))*a_0
 
-            big_Kuv = self.model.covar_module(ip, x[None,:,:])
-            big_Kuu = self.model.covar_module(ip[:,None,:,:],ip[None,:,:,:])
+            sigma2 = self.model.covar_module.outputscale
 
-            Kuv = torch.sum(A[:,:,None]*big_Kuv, dim = 0)
-            Kuu = torch.sum(torch.sum(A[:,None,:,None] * A[None,:,None,:] * big_Kuu, dim=0), dim = 0)
+            # XZ corr.
+            D_xz = a_z[:,torch.newaxis,:]*torch.square(x[torch.newaxis,:,:]-Z[:,torch.newaxis,:])
+            K_zx = sigma2*torch.exp(-0.5*torch.sum(D_xz, axis = -1))
+
+            mults = 1/(1/a_z[torch.newaxis,:,:] + 1/a_z[:,torch.newaxis,:] - 1/a_0[torch.newaxis,:,:])
+            D_zz = mults*torch.square(Z[:,torch.newaxis,:]-Z[torch.newaxis,:,:])
+            const = torch.sqrt(torch.prod(mults/a_z[torch.newaxis,:,:]/a_z[:,torch.newaxis,:]*a_0[torch.newaxis,:,:], axis = -1))
+            K_zz = sigma2*const*torch.exp(-0.5*torch.sum(D_zz, axis = -1))
+
+            #K_top = torch.concat([K_xx,K_zx.T], axis = 1)
+            #K_bot = torch.concat([K_zx,K_zz], axis = 1)
+            #K = torch.concat([K_top, K_bot], axis = 0)
+
+            #self.model.forward(x).covariance_matrix/0.6931
+
+            #torch.min(torch.linalg.eigh(K)[0])
+            #torch.min(torch.linalg.eigh(K_zz)[0])
+            # Not pd!
 
             ## Package for rest of function.
             test_mean = self.model.mean_module(x)
-            induc_induc_covar = Kuu.add_jitter(self.jitter_val)
-            induc_data_covar = Kuv.to_dense()
+            #induc_induc_covar = K_zz.add_jitter(self.jitter_val)
+            induc_induc_covar = K_zz + self.jitter_val * torch.eye(M)
+            induc_data_covar = K_zx.to_dense()
             data_data_covar = self.model.covar_module(x)
+
+            #D_xx = a_0[torch.newaxis,:,:]*torch.square(x[torch.newaxis,:,:]-x[:,torch.newaxis,:])
+            #K_xx = torch.exp(-0.5*torch.sum(D_xx, axis = -1))
+            #K_xx *= self.model.covar_module.outputscale
+            #torch.sum(torch.square(data_data_covar.to_dense() - K_xx))
 
         else:
             full_inputs = torch.cat([inducing_points, x], dim=-2)
@@ -242,6 +264,7 @@ class VariationalStrategy(_VariationalStrategy):
 
         # Compute the mean of q(f)
         # k_XZ K_ZZ^{-1/2} (m - K_ZZ^{-1/2} \mu_Z) + \mu_X
+        #import IPython; IPython.embed()
         predictive_mean = (interp_term.transpose(-1, -2) @ inducing_values.unsqueeze(-1)).squeeze(-1) + test_mean
 
         # Compute the covariance of q(f)

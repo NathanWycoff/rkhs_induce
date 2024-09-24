@@ -64,12 +64,12 @@ class _VariationalStrategy(Module, ABC):
         variational_distribution: _VariationalDistribution,
         learn_inducing_locations: bool = True,
         jitter_val: Optional[float] = None,
-        rkhs: bool = False,
+        hetero: bool = False,
     ):
         super().__init__()
 
         self._jitter_val = jitter_val
-        self.rkhs = rkhs
+        self.hetero = hetero
 
         # Model
         object.__setattr__(self, "model", model)
@@ -343,7 +343,7 @@ class _VariationalStrategy(Module, ABC):
 
         # Ensure inducing_points and x are the same size
         inducing_points = self.inducing_points
-        if not self.rkhs:
+        if not self.hetero:
             if inducing_points.shape[:-2] != x.shape[:-2]:
                 x, inducing_points = self._expand_inputs(x, inducing_points)
 

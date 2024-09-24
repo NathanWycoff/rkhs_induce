@@ -65,11 +65,13 @@ class _VariationalStrategy(Module, ABC):
         learn_inducing_locations: bool = True,
         jitter_val: Optional[float] = None,
         hetero: bool = False,
+        aniso: bool = False,
     ):
         super().__init__()
 
         self._jitter_val = jitter_val
         self.hetero = hetero
+        self.aniso = aniso
 
         # Model
         object.__setattr__(self, "model", model)

@@ -91,9 +91,10 @@ class VariationalStrategy(_VariationalStrategy):
         learn_inducing_locations: bool = True,
         jitter_val: Optional[float] = None,
         hetero: bool = False,
+        aniso: bool = False,
     ):
         super().__init__(
-            model, inducing_points, variational_distribution, learn_inducing_locations, jitter_val=jitter_val, hetero=hetero
+            model, inducing_points, variational_distribution, learn_inducing_locations, jitter_val=jitter_val, hetero=hetero, aniso = aniso
         )
         self.register_buffer("updated_strategy", torch.tensor(True))
         self._register_load_state_dict_pre_hook(_ensure_updated_strategy_flag_set)
@@ -189,25 +190,79 @@ class VariationalStrategy(_VariationalStrategy):
     ) -> MultivariateNormal:
         # Compute full prior distribution
         if self.hetero:
-            #import IPython; IPython.embed()
-            M,P,_ = inducing_points.shape
-            Z = inducing_points[:,:,0]
-            lss = inducing_points[:,:,1]
-
             a_0 = 1/torch.square(self.model.covar_module.base_kernel.lengthscale)
-            a_z = (0.5+torch.exp(lss))*a_0
-
             sigma2 = self.model.covar_module.outputscale
 
-            # XZ corr.
-            D_xz = a_z[:,torch.newaxis,:]*torch.square(x[torch.newaxis,:,:]-Z[:,torch.newaxis,:])
-            K_zx = sigma2*torch.exp(-0.5*torch.sum(D_xz, axis = -1))
+            if self.aniso:
+                ls_scale = inducing_points[:,:,1:]
+                Z = inducing_points[:,:,0]
+                M,P = Z.shape
 
-            mults = 1/(1/a_z[torch.newaxis,:,:] + 1/a_z[:,torch.newaxis,:] - 1/a_0[torch.newaxis,:,:])
-            D_zz = mults*torch.square(Z[:,torch.newaxis,:]-Z[torch.newaxis,:,:])
-            const = torch.sqrt(torch.prod(mults/a_z[torch.newaxis,:,:]/a_z[:,torch.newaxis,:]*a_0[torch.newaxis,:,:], axis = -1))
-            K_zz = sigma2*const*torch.exp(-0.5*torch.sum(D_zz, axis = -1))
+                B = ls_scale.transpose(1,2) @ ls_scale
+                li_0 = 1/torch.sqrt(a_0)
+                A_zi = li_0[:,:,torch.newaxis]*(0.5*torch.eye(P)[torch.newaxis,:,:]+B)*li_0[:,torch.newaxis,:]
+                A_z = torch.linalg.inv(A_zi)
+                L_z = torch.linalg.cholesky(A_z).transpose(1,2)
+                #torch.max(torch.abs(A_z - L_z.transpose(1,2) @ L_z))
+                #D = torch.diag(l_0.squeeze())
+                #A_z[0,:,:] - (D @ (0.5*torch.eye(P)[torch.newaxis,:,:]+B[0,:,:]) @ D)
 
+                # XZ corr.
+                D_xz = x[torch.newaxis,:,:]-Z[:,torch.newaxis,:]
+                D_xz = L_z[:,torch.newaxis,:,:] @ D_xz[:,:,:,torch.newaxis]
+                D_xz = D_xz.squeeze()
+                D_xz = torch.square(D_xz)
+                K_zx = sigma2*torch.exp(-0.5*torch.sum(D_xz, axis = -1))
+
+                # ZZ Corr
+                Dai = torch.diag(1/a_0.squeeze())
+                DELTA = (A_zi[torch.newaxis,:,:,:]+A_zi[:,torch.newaxis,:,:]-Dai[torch.newaxis,torch.newaxis,:,:])
+                DELTAi = torch.linalg.inv(DELTA)
+                L_d = torch.linalg.cholesky(DELTAi).transpose(-1,-2)
+
+                D_zz = Z[:,torch.newaxis,:]-Z[torch.newaxis,:,:]
+                D_zz = L_d @ D_zz[:,:,:,torch.newaxis]
+                D_zz = D_zz.squeeze()
+                D_zz = torch.square(D_zz)
+                #D_zzD = (DELTAi@D_zz[:,:,:,torch.newaxis]).squeeze()
+
+                A_zldet = torch.linalg.slogdet(A_z)[1]
+                A_0ldet = torch.sum(torch.log(a_0))
+                DELTA_ldet = torch.linalg.slogdet(DELTA)[1]
+                lconst = A_0ldet[torch.newaxis,torch.newaxis] -A_zldet[torch.newaxis,:]-A_zldet[:,torch.newaxis]-DELTA_ldet
+                const = torch.exp(0.5*lconst)
+
+                K_zz = sigma2*const*torch.exp(-0.5*torch.sum(D_zz, axis = -1))
+
+                #D_xx = a_0[torch.newaxis,:,:]*torch.square(x[torch.newaxis,:,:]-x[:,torch.newaxis,:])
+                #K_xx = sigma2*torch.exp(-0.5*torch.sum(D_xx, axis = -1))
+                #K_top = torch.concat([K_xx,K_zx.T], axis = 1)
+                #K_bot = torch.concat([K_zx,K_zz], axis = 1)
+                #K = torch.concat([K_top, K_bot], axis = 0)
+                #torch.linalg.eigh(K)[0]
+
+            else:
+                M,P,_ = inducing_points.shape
+                Z = inducing_points[:,:,0]
+                lss = inducing_points[:,:,1]
+
+                a_z = (0.5+torch.exp(lss))*a_0
+
+                # XZ corr.
+                D_xz = a_z[:,torch.newaxis,:]*torch.square(x[torch.newaxis,:,:]-Z[:,torch.newaxis,:])
+                K_zx = sigma2*torch.exp(-0.5*torch.sum(D_xz, axis = -1))
+
+                # ZZ Corr
+                mults = 1/(1/a_z[torch.newaxis,:,:] + 1/a_z[:,torch.newaxis,:] - 1/a_0[torch.newaxis,:,:])
+                D_zz = mults*torch.square(Z[:,torch.newaxis,:]-Z[torch.newaxis,:,:])
+                const = torch.sqrt(torch.prod(mults/a_z[torch.newaxis,:,:]/a_z[:,torch.newaxis,:]*a_0[torch.newaxis,:,:], axis = -1))
+                K_zz = sigma2*const*torch.exp(-0.5*torch.sum(D_zz, axis = -1))
+
+
+            #D_xx = a_0[torch.newaxis,:,:]*torch.square(x[torch.newaxis,:,:]-x[:,torch.newaxis,:])
+            #K_xx = torch.exp(-0.5*torch.sum(D_xx, axis = -1))
+            #K_xx *= self.model.covar_module.outputscale
+            #torch.sum(torch.square(data_data_covar.to_dense() - K_xx))
             #K_top = torch.concat([K_xx,K_zx.T], axis = 1)
             #K_bot = torch.concat([K_zx,K_zz], axis = 1)
             #K = torch.concat([K_top, K_bot], axis = 0)
@@ -224,11 +279,6 @@ class VariationalStrategy(_VariationalStrategy):
             induc_induc_covar = K_zz + self.jitter_val * torch.eye(M)
             induc_data_covar = K_zx.to_dense()
             data_data_covar = self.model.covar_module(x)
-
-            #D_xx = a_0[torch.newaxis,:,:]*torch.square(x[torch.newaxis,:,:]-x[:,torch.newaxis,:])
-            #K_xx = torch.exp(-0.5*torch.sum(D_xx, axis = -1))
-            #K_xx *= self.model.covar_module.outputscale
-            #torch.sum(torch.square(data_data_covar.to_dense() - K_xx))
 
         else:
             full_inputs = torch.cat([inducing_points, x], dim=-2)

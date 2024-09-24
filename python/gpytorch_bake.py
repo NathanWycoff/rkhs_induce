@@ -38,8 +38,9 @@ print("Post import")
 #config.update("jax_enable_x64", True)
 exec(open("python/sim_settings.py").read())
 
-manual = False
-#manual = True
+#manual = False
+manual = True
+aniso = True
 
 if precision=='64':
     torch_dt = torch.float64
@@ -149,9 +150,9 @@ for method in methods:
             raise Exception("Unknown torch method '" + method + "'")
 
         class GPModel(ApproximateGP):
-            def __init__(self, inducing_points, hetero):
+            def __init__(self, inducing_points, hetero, aniso):
                 variational_distribution = CholeskyVariationalDistribution(M)
-                variational_strategy = VariationalStrategy(self, inducing_points, variational_distribution, learn_inducing_locations=True, hetero = hetero)
+                variational_strategy = VariationalStrategy(self, inducing_points, variational_distribution, learn_inducing_locations=True, hetero = hetero, aniso = aniso)
                 super(GPModel, self).__init__(variational_strategy)
                 self.mean_module = gpytorch.means.ConstantMean()
                 self.covar_module = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel(ard_num_dims=P))
@@ -166,13 +167,25 @@ for method in methods:
         test_x = torch.tensor(XX, dtype = torch_dt)
         test_y = torch.tensor(yy, dtype = torch_dt)
 
+        if problem=='syn_sine':
+            ls_init = -P
+        else:
+            ls_init = np.log(1.)
+
         inducing_points = train_x[first_iv, :]
         if hetero:
-            # Under mapping x->(1/2+exp(x))*ls this initializes to the vanilla boi.
-            ls_scale = torch.ones([M,P])*np.log(1/2)
-            inducing_points = torch.stack([inducing_points,ls_scale], dim=-1)
+            if aniso:
+                #ls_scale = torch.randn(size=[M,P,P])
+                #ls_scale = torch.stack([torch.eye(P)/np.sqrt(2) for _ in range(M)])
+                ls_scale = torch.stack([torch.eye(P)/np.sqrt(2) for _ in range(M)])+1e-1*torch.randn(size=[M,P,P])
+                inducing_points = torch.concat([inducing_points[:,:,torch.newaxis], ls_scale], axis = -1)
+                print("Actually want 1/2I init.")
+            else:
+                # Under mapping x->(1/2+exp(x))*ls this initializes to the vanilla boi.
+                ls_scale = torch.ones([M,P])*np.log(1/2)
+                inducing_points = torch.stack([inducing_points,ls_scale], dim=-1)
 
-        model = GPModel(inducing_points=inducing_points, hetero = hetero)
+        model = GPModel(inducing_points=inducing_points, hetero = hetero, aniso = aniso)
         likelihood = gpytorch.likelihoods.GaussianLikelihood()
         if precision=='64':
             model.double()
@@ -184,10 +197,6 @@ for method in methods:
             model.half()
             likelihood.half()
 
-        if problem=='syn_sine':
-            ls_init = -P
-        else:
-            ls_init = np.log(1.)
         if ls_init!=0. and init_style=='samp_orth':
             assert False
         model.covar_module.base_kernel.raw_lengthscale = torch.nn.Parameter(ls_init*torch.ones_like(model.covar_module.base_kernel.raw_lengthscale))

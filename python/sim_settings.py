@@ -48,4 +48,5 @@ if test:
     reps = 2
     max_iters = 100
 
-methods = ['torch_hetero','torch_vanil']
+#methods = ['torch_hetero','torch_vanil']
+methods = ['torch_vanil','torch_hetero']

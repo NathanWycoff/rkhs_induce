@@ -20,21 +20,25 @@ rdf = df.groupby(['Method','M']).median()
 
 fig = plt.figure(figsize=[len(methods)*4,3])
 
-plt.subplot(1,3,1)
+plt.subplot(1,4,1)
 for meth in methods:
     plt.plot(rdf.loc[meth,'MSE'], label = meth)
-#plt.plot(rdf.loc['hen','MSE'], label = 'hen')
-#plt.plot(rdf.loc['m2','MSE'], label = 'm2')
 plt.ylabel("logMSE")
 plt.legend()
 
-plt.subplot(1,3,2)
+plt.subplot(1,4,2)
+for meth in methods:
+    plt.plot(rdf.loc[meth,'NLL'], label = meth)
+plt.ylabel("logMSE")
+plt.legend()
+
+plt.subplot(1,4,3)
 for meth in methods:
     plt.plot(rdf.loc[meth,'Time'], label = meth)
 plt.ylabel("Time")
 plt.legend()
 
-plt.subplot(1,3,3)
+plt.subplot(1,4,4)
 for meth in methods:
     plt.plot(rdf.loc[meth,'TPI'], label = meth)
 plt.ylabel("TPI")

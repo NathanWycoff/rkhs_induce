@@ -38,8 +38,8 @@ print("Post import")
 #config.update("jax_enable_x64", True)
 exec(open("python/sim_settings.py").read())
 
-#manual = False
-manual = True
+manual = False
+#manual = True
 aniso = True
 
 if precision=='64':

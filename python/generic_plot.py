@@ -29,7 +29,7 @@ plt.legend()
 plt.subplot(1,4,2)
 for meth in methods:
     plt.plot(rdf.loc[meth,'NLL'], label = meth)
-plt.ylabel("logMSE")
+plt.ylabel("NLL")
 plt.legend()
 
 plt.subplot(1,4,3)

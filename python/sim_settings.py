@@ -15,8 +15,8 @@ test = False
 
 #problem = 'syn_sine'
 problem = 'kin40k'
-#problem = 'year'
 #problem = 'keggu'
+#problem = 'year'
 
 oversimdir = './simout/'
 simdir = oversimdir+problem+'/'
@@ -24,9 +24,12 @@ overfigsdir = './figsout/'
 figsdir = overfigsdir+problem+'/'
 datdir = 'pickles'
 
-Ms = np.ceil(np.linspace(1,500,num=10)).astype(int)
+#Ms = np.ceil(np.linspace(1,500,num=10)).astype(int)
+Ms = np.ceil(np.linspace(50,1000,num=10)).astype(int)
 #reps = 100
 reps = 10
+#K = 10
+K = 1
 
 ## Optimization params
 #lr = 1e-3
@@ -48,5 +51,5 @@ if test:
     reps = 2
     max_iters = 100
 
-#methods = ['torch_hetero','torch_vanil']
-methods = ['torch_vanil','torch_hetero']
+methods = ['torch_hetero','torch_vanil']
+#methods = ['torch_vanil','torch_hetero']

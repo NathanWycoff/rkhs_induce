@@ -38,9 +38,12 @@ print("Post import")
 #config.update("jax_enable_x64", True)
 exec(open("python/sim_settings.py").read())
 
-manual = False
-#manual = True
+#manual = False
+manual = True
 aniso = True
+#aniso = False
+#torch_compile = False
+torch_compile = True
 
 if precision=='64':
     torch_dt = torch.float64
@@ -64,7 +67,8 @@ if manual:
         quit()
     for i in range(10):
         print("manual!")
-    M = 100
+    #M = 100
+    M = 97
     seed = 0
 else:
     M = int(sys.argv[1])
@@ -176,16 +180,21 @@ for method in methods:
         if hetero:
             if aniso:
                 #ls_scale = torch.randn(size=[M,P,P])
-                #ls_scale = torch.stack([torch.eye(P)/np.sqrt(2) for _ in range(M)])
-                ls_scale = torch.stack([torch.eye(P)/np.sqrt(2) for _ in range(M)])+1e-1*torch.randn(size=[M,P,P])
+                ls_scale = torch.stack([torch.eye(P)/np.sqrt(2) for _ in range(K)])
+                #ls_scale = torch.stack([torch.eye(P)/np.sqrt(2) for _ in range(K)])+1e-1*torch.randn(size=[K,P,P])
+                ls_scale = torch.concat([ls_scale, torch.zeros([M-K,P,P])])
                 inducing_points = torch.concat([inducing_points[:,:,torch.newaxis], ls_scale], axis = -1)
-                print("Actually want 1/2I init.")
+                #for i in range(10):
+                #    print("Bad init")
             else:
                 # Under mapping x->(1/2+exp(x))*ls this initializes to the vanilla boi.
                 ls_scale = torch.ones([M,P])*np.log(1/2)
                 inducing_points = torch.stack([inducing_points,ls_scale], dim=-1)
 
         model = GPModel(inducing_points=inducing_points, hetero = hetero, aniso = aniso)
+        #TODO:
+        model.K = K
+        model.m_per_k = int(np.ceil(M/K))
         likelihood = gpytorch.likelihoods.GaussianLikelihood()
         if precision=='64':
             model.double()

@@ -42,8 +42,6 @@ exec(open("python/sim_settings.py").read())
 manual = True
 aniso = True
 #aniso = False
-#torch_compile = False
-torch_compile = True
 
 if precision=='64':
     torch_dt = torch.float64
@@ -57,6 +55,7 @@ elif precision=='16':
 else:
     raise Exception("Precision not supported.")
 torch.set_default_dtype(torch_dt)
+
 
 if manual:
     if len(sys.argv)>1:
@@ -73,6 +72,9 @@ if manual:
 else:
     M = int(sys.argv[1])
     seed = int(sys.argv[2])
+
+if K=='M':
+    K = M
 
 sim_id = str(M)+'_'+str(seed)
 

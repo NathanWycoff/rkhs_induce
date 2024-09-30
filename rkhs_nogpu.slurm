@@ -1,6 +1,6 @@
 #!/bin/bash
 
-## srun --mem=5G --pty /bin/bash
+## srun --time=02:00:00 --mem=5G --pty /bin/bash
 
 #SBATCH --mem=5G
 #SBATCH --time=01:00:00

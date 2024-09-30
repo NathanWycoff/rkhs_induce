@@ -38,8 +38,8 @@ print("Post import")
 #config.update("jax_enable_x64", True)
 exec(open("python/sim_settings.py").read())
 
-#manual = False
-manual = True
+manual = False
+#manual = True
 aniso = True
 #aniso = False
 
@@ -67,7 +67,8 @@ if manual:
     for i in range(10):
         print("manual!")
     #M = 100
-    M = 97
+    #M = 97
+    M = 750
     seed = 0
 else:
     M = int(sys.argv[1])

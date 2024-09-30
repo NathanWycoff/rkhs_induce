@@ -13,8 +13,8 @@
 #SBATCH --output=%x-%A-%3a.out
 #SBATCH --error=%x-%A-%3a.err
 #SBATCH --array=1-100
-##SBATCH --constraint=a100-80g
-#SBATCH --constraint=1080ti
+#SBATCH --constraint=a100-80g
+##SBATCH --constraint=1080ti
 
 module load miniconda/22.11.1-1
 module load cuda/11.4.0

@@ -227,9 +227,12 @@ class VariationalStrategy(_VariationalStrategy):
                 device = self._variational_distribution.device
                 dtype = self._variational_distribution.dtype
 
+                # TODO: Take advantage of symmetry?
+
                 ls_scale = inducing_points[:K,:,1:]
                 Z = inducing_points[:,:,0]
 
+                ## Construct matrices.
                 B = ls_scale.transpose(1,2) @ ls_scale
                 li_0 = 1/torch.sqrt(a_0)
                 A_zi = li_0[:,:,torch.newaxis]*(0.5*torch.eye(P, device = device, dtype=dtype)[torch.newaxis,:,:]+B)*li_0[:,torch.newaxis,:]
@@ -239,18 +242,45 @@ class VariationalStrategy(_VariationalStrategy):
                 DELTAi = (A_zi[torch.newaxis,:,:,:]+A_zi[:,torch.newaxis,:,:]-Dai[torch.newaxis,torch.newaxis,:,:])
                 L_d = torch.linalg.cholesky(DELTAi)
 
-                X = torch.cat([Z,x])
-                N = x.shape[0]
-                Ltop = torch.cat([L_d, torch.tile(L_zi[:,None,:,:], [1,N,1,1])], axis = 1)
-                L_x = torch.diag(torch.sqrt(1/a_0).squeeze())
-                Lbot = torch.cat([torch.tile(L_zi[None,:,:,:], [N,1,1,1]),torch.tile(L_x[None,None,:,:], [N,N,1,1])], axis = 1)
-                L = torch.cat([Ltop,Lbot],axis=0)
+                ## Prepare Kzz constant.
+                A_zldet = -2*torch.sum(torch.log(torch.diagonal(L_zi, dim1 = -2, dim2 = -1)), axis = -1)
+                A_0ldet = torch.sum(torch.log(a_0))
+                DELTA_ldet = 2*torch.sum(torch.log(torch.diagonal(L_d, dim1 = 2, dim2 = 3)), axis = -1)
+                lconst = A_0ldet[torch.newaxis,torch.newaxis] -A_zldet[torch.newaxis,:]-A_zldet[:,torch.newaxis]-DELTA_ldet
+                const = torch.exp(0.5*lconst)
 
-                Na = X.shape[0]
-                Xbig = torch.cat([X[:,None,:,None].repeat([1,Na,1,1]), torch.tile(X[None,:,:,None],[Na,1,1,1])],-1)
-                # TODO: Take advantage of symmetry?
-                LiX = torch.linalg.solve_triangular(L, Xbig, upper=False)
-                D_Li = torch.diff(LiX,axis=-1).squeeze().square().sum(axis=2)
+                ## Compute Kzz
+                Zbig = torch.cat([Z[:,None,:,None].repeat([1,M,1,1]), torch.tile(Z[None,:,:,None],[M,1,1,1])],-1)
+                LiZ = torch.linalg.solve_triangular(L_d, Zbig,upper=False)
+                K_zz = const*sigma2*torch.diff(LiZ,axis=-1).squeeze().square().sum(axis=2).div_(-2).exp_()
+
+                ## Kzx
+                N = x.shape[0]
+                #ZXbig = torch.cat([Z[:,:,None].repeat([1,1,N]), torch.tile(x.T[None,:,:],[M,1,1])],-1)
+                ZXbig = torch.cat([Z[:,:,None], torch.tile(x.T[None,:,:],[M,1,1])],-1)
+                LiZX = torch.linalg.solve_triangular(L_zi, ZXbig, upper=False)
+                K_zx = sigma2*(LiZX[:,:,0:1] - LiZX[:,:,1:]).square().sum(axis=1).div_(-2).exp_()
+
+                ## Kxx
+                xd = x.div(self.model.covar_module.base_kernel.lengthscale)
+                K_xx = sigma2*sq_dist(xd,xd,x1_eq_x2=True).div_(-2).exp()
+
+                #K_top = torch.concat([K_xx,K_zx.T], axis = 1)
+                #K_bot = torch.concat([K_zx,K_zz], axis = 1)
+                #K = torch.concat([K_top, K_bot], axis = 0)
+                #torch.linalg.eigh(K)[0]
+
+                #N = x.shape[0]
+                #Ltop = torch.cat([L_d, torch.tile(L_zi[:,None,:,:], [1,N,1,1])], axis = 1)
+                #L_x = torch.diag(torch.sqrt(1/a_0).squeeze())
+                #Lbot = torch.cat([torch.tile(L_zi[None,:,:,:], [N,1,1,1]),torch.tile(L_x[None,None,:,:], [N,N,1,1])], axis = 1)
+                #L = torch.cat([Ltop,Lbot],axis=0)
+
+                #X = torch.cat([Z,x])
+                #Na = X.shape[0]
+                #Xbig = torch.cat([X[:,None,:,None].repeat([1,Na,1,1]), torch.tile(X[None,:,:,None],[Na,1,1,1])],-1)
+                #LiX = torch.linalg.solve_triangular(L, Xbig, upper=False)
+                #D_Li = torch.diff(LiX,axis=-1).squeeze().square().sum(axis=2)
 
                 ### Lab: ZZ terms OK?
                 #i = 1
@@ -270,28 +300,17 @@ class VariationalStrategy(_VariationalStrategy):
                 #torch.sum(torch.square(d)*a_0.squeeze())
                 ## Lab
 
-                big_K_nodet = sigma2*D_Li.div_(-2).exp_()
+                #big_K_nodet = sigma2*D_Li.div_(-2).exp_()
 
-                A_zldet = -2*torch.sum(torch.log(torch.diagonal(L_zi, dim1 = -2, dim2 = -1)), axis = -1)
-                A_0ldet = torch.sum(torch.log(a_0))
-                DELTA_ldet = 2*torch.sum(torch.log(torch.diagonal(L_d, dim1 = 2, dim2 = 3)), axis = -1)
-                lconst = A_0ldet[torch.newaxis,torch.newaxis] -A_zldet[torch.newaxis,:]-A_zldet[:,torch.newaxis]-DELTA_ldet
-                const = torch.exp(0.5*lconst)
-
-                #torch.cat([const,torch.ones(x.shape[0],device=device)])
-                K_zz = const*big_K_nodet[:M,:M]
-                K_zx = big_K_nodet[:M,M:]
-                ### Lab
-                #K_zx[1,2]
-                #d = Z[1,:] - x[2,:]
-                #sigma2*torch.exp(-0.5*d@torch.linalg.inv(A_zi[1,:,:])@d)
-                ### Lab
-                K_xx = big_K_nodet[M:,M:]
-
-                #K_top = torch.concat([K_xx,K_zx.T], axis = 1)
-                #K_bot = torch.concat([K_zx,K_zz], axis = 1)
-                #K = torch.concat([K_top, K_bot], axis = 0)
-                #torch.linalg.eigh(K)[0]
+                ##torch.cat([const,torch.ones(x.shape[0],device=device)])
+                #K_zz = const*big_K_nodet[:M,:M]
+                #K_zx = big_K_nodet[:M,M:]
+                #### Lab
+                ##K_zx[1,2]
+                ##d = Z[1,:] - x[2,:]
+                ##sigma2*torch.exp(-0.5*d@torch.linalg.inv(A_zi[1,:,:])@d)
+                #### Lab
+                #K_xx = big_K_nodet[M:,M:]
 
             else:
                 M,P,_ = inducing_points.shape

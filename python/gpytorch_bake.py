@@ -182,13 +182,12 @@ for method in methods:
         inducing_points = train_x[first_iv, :]
         if hetero:
             if aniso:
-                #ls_scale = torch.randn(size=[M,P,P])
                 ls_scale = torch.stack([torch.eye(P)/np.sqrt(2) for _ in range(K)])
                 #ls_scale = torch.stack([torch.eye(P)/np.sqrt(2) for _ in range(K)])+1e-1*torch.randn(size=[K,P,P])
+                #for i in range(100):
+                #    print("Bad init")
                 ls_scale = torch.concat([ls_scale, torch.zeros([M-K,P,P])])
                 inducing_points = torch.concat([inducing_points[:,:,torch.newaxis], ls_scale], axis = -1)
-                #for i in range(10):
-                #    print("Bad init")
             else:
                 # Under mapping x->(1/2+exp(x))*ls this initializes to the vanilla boi.
                 ls_scale = torch.ones([M,P])*np.log(1/2)

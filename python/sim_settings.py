@@ -26,14 +26,15 @@ datdir = 'pickles'
 
 #Ms = np.ceil(np.linspace(1,500,num=10)).astype(int)
 #Ms = np.ceil(np.linspace(50,1000,num=10)).astype(int)
-Ms = np.ceil(np.linspace(25,750,num=10)).astype(int)
+#Ms = np.ceil(np.linspace(25,750,num=10)).astype(int)
+Ms = np.ceil(np.linspace(100,3000,num=10)).astype(int)
 #reps = 100
 reps = 10
 #K = 10
 #K = 1
 #K = 5
-#K = 100
-K = 500
+K = 100
+#K = 500
 #K = 'M'
 
 ## Optimization params

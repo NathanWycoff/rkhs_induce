@@ -31,7 +31,9 @@ Ms = np.ceil(np.linspace(25,750,num=10)).astype(int)
 reps = 10
 #K = 10
 #K = 1
-K = 5
+#K = 5
+#K = 100
+K = 500
 #K = 'M'
 
 ## Optimization params

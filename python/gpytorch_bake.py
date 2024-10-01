@@ -78,6 +78,9 @@ else:
 if K=='M':
     K = M
 
+if K>M:
+    K = M
+
 sim_id = str(M)+'_'+str(seed)
 
 np.random.seed(seed)

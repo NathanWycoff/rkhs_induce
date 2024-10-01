@@ -68,6 +68,7 @@ if manual:
         print("manual!")
     #M = 100
     #M = 97
+    #M = 18
     M = 750
     seed = 0
 else:

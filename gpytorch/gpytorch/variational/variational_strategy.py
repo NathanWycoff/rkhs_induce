@@ -222,7 +222,7 @@ class VariationalStrategy(_VariationalStrategy):
                 #import IPython; IPython.embed()
                 K = self.model.K
                 M,P,_ = inducing_points.shape
-                assert K==M
+                mpk = self.model.m_per_k
                 si = torch.arange(M)//self.model.m_per_k
                 device = self._variational_distribution.device
                 dtype = self._variational_distribution.dtype
@@ -249,17 +249,50 @@ class VariationalStrategy(_VariationalStrategy):
                 lconst = A_0ldet[torch.newaxis,torch.newaxis] -A_zldet[torch.newaxis,:]-A_zldet[:,torch.newaxis]-DELTA_ldet
                 const = torch.exp(0.5*lconst)
 
+                npad = K*mpk-M
+                Zpad = torch.cat([Z,torch.zeros([npad,P],device=device)],axis=0)
+                Zpad = Zpad.reshape([K,mpk,P]).transpose(1,2)
+
                 ## Compute Kzz
-                Zbig = torch.cat([Z[:,None,:,None].repeat([1,M,1,1]), torch.tile(Z[None,:,:,None],[M,1,1,1])],-1)
+                Zbig = torch.cat([Zpad[:,None,:,:].repeat([1,K,1,1]), torch.tile(Zpad[None,:,:,:],[K,1,1,1])],-1)
                 LiZ = torch.linalg.solve_triangular(L_d, Zbig,upper=False)
-                K_zz = const*sigma2*torch.diff(LiZ,axis=-1).squeeze().square().sum(axis=2).div_(-2).exp_()
+                zzz = LiZ.transpose(2,3)
+                #tensor_dist = sq_dist(zzz,zzz,x1_eq_x2=True)
+                tensor_dist = sq_dist(zzz[:,:,:mpk,:],zzz[:,:,mpk:,:],x1_eq_x2=False)
+                tensor_k = const[:,:,None,None]*tensor_dist.div_(-2).exp_()
+                K_zz = sigma2*tensor_k.transpose(1,2).reshape([K*mpk,K*mpk])
+                K_zz = K_zz[:M,:M]
+                #torch.linalg.eigh(K_zz)[0]
+                #torch.diag(square_dist)
+
+                ##
+                #for _ in range(100):
+                #    i,j = np.random.choice(M,2,replace=False)
+                #    myest = square_dist[i,j]
+                #    myotherest = (Z[i,:]-Z[j,:]) @ torch.linalg.inv(DELTAi[si[i],si[j]]) @ (Z[i,:]-Z[j,:])
+                #    if abs(myest-myotherest)>1e-6:
+                #        print("nah boi")
+                #K_zz = const*sigma2*torch.diff(LiZ,axis=-1).squeeze().square().sum(axis=2).div_(-2).exp_()
 
                 ## Kzx
                 N = x.shape[0]
                 #ZXbig = torch.cat([Z[:,:,None].repeat([1,1,N]), torch.tile(x.T[None,:,:],[M,1,1])],-1)
-                ZXbig = torch.cat([Z[:,:,None], torch.tile(x.T[None,:,:],[M,1,1])],-1)
+                ZXbig = torch.cat([Zpad, torch.tile(x.T[None,:,:],[K,1,1])],-1)
                 LiZX = torch.linalg.solve_triangular(L_zi, ZXbig, upper=False)
-                K_zx = sigma2*(LiZX[:,:,0:1] - LiZX[:,:,1:]).square().sum(axis=1).div_(-2).exp_()
+                #K_zx = sigma2*(LiZX[:,:,0:1] - LiZX[:,:,1:]).square().sum(axis=1).div_(-2).exp_()
+                xxx = LiZX.transpose(1,2)
+                tensor_dist = sq_dist(xxx[:,:mpk,:],xxx[:,mpk:,:],x1_eq_x2=False)
+                K_zx = sigma2*tensor_dist.reshape([K*mpk,N]).div_(-2).exp_()
+                K_zx = K_zx[:M,:]
+
+                #for _ in range(100):
+                #    #i,j = np.random.choice(M,2,replace=False)
+                #    i = np.random.choice(M,1)[0]
+                #    j = np.random.choice(N,1)[0]
+                #    myest = square_dist[i,j]
+                #    myotherest = (Z[i,:]-x[j,:]) @ torch.linalg.inv(A_zi[si[i],:,:]) @ (Z[i,:]-x[j,:])
+                #    if abs(myest-myotherest)>1e-6:
+                #        print("nah boi")
 
                 ## Kxx
                 xd = x.div(self.model.covar_module.base_kernel.lengthscale)
@@ -267,51 +300,8 @@ class VariationalStrategy(_VariationalStrategy):
 
                 #K_top = torch.concat([K_xx,K_zx.T], axis = 1)
                 #K_bot = torch.concat([K_zx,K_zz], axis = 1)
-                #K = torch.concat([K_top, K_bot], axis = 0)
-                #torch.linalg.eigh(K)[0]
-
-                #N = x.shape[0]
-                #Ltop = torch.cat([L_d, torch.tile(L_zi[:,None,:,:], [1,N,1,1])], axis = 1)
-                #L_x = torch.diag(torch.sqrt(1/a_0).squeeze())
-                #Lbot = torch.cat([torch.tile(L_zi[None,:,:,:], [N,1,1,1]),torch.tile(L_x[None,None,:,:], [N,N,1,1])], axis = 1)
-                #L = torch.cat([Ltop,Lbot],axis=0)
-
-                #X = torch.cat([Z,x])
-                #Na = X.shape[0]
-                #Xbig = torch.cat([X[:,None,:,None].repeat([1,Na,1,1]), torch.tile(X[None,:,:,None],[Na,1,1,1])],-1)
-                #LiX = torch.linalg.solve_triangular(L, Xbig, upper=False)
-                #D_Li = torch.diff(LiX,axis=-1).squeeze().square().sum(axis=2)
-
-                ### Lab: ZZ terms OK?
-                #i = 1
-                #j = 2
-                #D_Li[i,j]
-                #d = X[i,:]-X[j,:]
-                #Dij = DELTAi[i,j,:,:]
-                #d @ torch.linalg.inv(Dij) @ d
-                ### Lab XX terms OK?
-                #ii = 1
-                #jj = 2
-                #i = M+ii
-                #j = M+jj
-                #D_Li[i,j]
-                #d = x[ii,:]-x[jj,:]
-                ##torch.sum(torch.square(d))
-                #torch.sum(torch.square(d)*a_0.squeeze())
-                ## Lab
-
-                #big_K_nodet = sigma2*D_Li.div_(-2).exp_()
-
-                ##torch.cat([const,torch.ones(x.shape[0],device=device)])
-                #K_zz = const*big_K_nodet[:M,:M]
-                #K_zx = big_K_nodet[:M,M:]
-                #### Lab
-                ##K_zx[1,2]
-                ##d = Z[1,:] - x[2,:]
-                ##sigma2*torch.exp(-0.5*d@torch.linalg.inv(A_zi[1,:,:])@d)
-                #### Lab
-                #K_xx = big_K_nodet[M:,M:]
-
+                #Kall = torch.concat([K_top, K_bot], axis = 0)
+                #torch.linalg.eigh(Kall)[0]
             else:
                 M,P,_ = inducing_points.shape
                 Z = inducing_points[:,:,0]
